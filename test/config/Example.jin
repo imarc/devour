@@ -1,0 +1,104 @@
+[devour.map]
+
+	;
+	; The primary source table from which we"ll pull data
+	;
+
+	source = evmas
+
+	;
+	;
+	;
+
+	target = events
+
+	;
+	; Which set of fields are used to uniquely identify entries in the target table.
+	;
+
+	key = id
+
+	;
+	;
+	;
+
+	require = ["people", "organizations"]
+
+	;
+	;
+	;
+
+	joins = {
+		"firms": {
+			"vendor": [
+				"events.vendr = vendor.firm"
+			],
+			"location": [
+				"events.fac = location.firm"
+			]
+		},
+
+		"names": {
+			"facilitator": [
+				"events.admin = facilitator.id"
+			]
+		}
+	}
+
+	;
+	; List of fields
+	;
+
+	fields = {
+		"id"                       : "events.control",
+		"code"                     : "events.code1",
+		"title"                    : "(RTRIM(LTRIM(events.emtitle1)) + ' ' + RTRIM(LTRIM(events.emtitle2)))",
+
+		"vendor"                   : "vendor.firm",
+		"location"                 : "location.firm",
+		"facilitator"              : "facilitator.id",
+
+		"description"              : "events.markdesc",
+		"status"                   : "events.ss",
+
+		"start_date"               : "events.begdate",
+		"start_time"               : "events.begtime",
+		"end_date"                 : "events.enddate",
+		"end_time"                 : "events.endtime",
+		"timezone"                 : "events.timezone"
+	}
+
+	;
+	;
+	;
+
+	filters = {
+		"description"              : "utf8",
+		"timezone"                 : "tzone"
+	}
+
+	;
+	;
+	;
+
+	updateWheres = [
+		"events.adate >= '{{ last_synced }}'",
+		"events.udate >= '{{ last_synced }}'"
+	]
+
+	;
+	;
+	;
+
+	wheres = [
+
+	]
+
+
+	[&.params]
+
+		;
+		;
+		;
+
+		trackerLimit = env('TRACKER_LIMIT', '2019-01-01')
