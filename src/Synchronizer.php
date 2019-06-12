@@ -243,8 +243,6 @@ class Synchronizer
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 
-		var_dump(count($source_keys), count($destination_keys));
-
 		$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
 		$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
 
@@ -270,8 +268,6 @@ class Synchronizer
 		$keys_not_in_source       = array_diff($destination_keys, $source_keys);
 		$destination_delete_query = $mapping->composeDestinationDeleteQuery($keys_not_in_source);
 
-		var_dump(count($keys_not_in_source));
-
 		if (!count($keys_not_in_source)) {
 			return NULL;
 		}
@@ -287,8 +283,6 @@ class Synchronizer
 	{
 		$keys_not_in_destination = array_diff($source_keys, $destination_keys);
 		$source_select_query     = $mapping->composeSourceSelectQuery($keys_not_in_destination);
-
-		var_dump(count($keys_not_in_destination));
 
 		if (!count($keys_not_in_destination)) {
 			return NULL;
