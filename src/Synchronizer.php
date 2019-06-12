@@ -161,13 +161,40 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected function filterKeys(Mapping $mapping, array $keys)
+	{
+		$filters = $mapping->getFilters($mapping->getKey());
+
+		foreach ($filters as $filter) {
+			if (!isset($this->filters[$filter])) {
+				throw new RuntimeException(sprintf(
+					'Cannot filter key with "%s", filter not registered.',
+					$column,
+					$filter
+				));
+			}
+		}
+
+		foreach (array_keys($keys) as $i) {
+			foreach ($filters as $filter) {
+				$keys[$i] = $this->filters[$filter]($keys[$i]);
+			}
+		}
+
+		return $keys;
+	}
+
+
+	/**
+	 *
+	 */
 	protected function getExistingDestinationKeys(Mapping $mapping)
 	{
 		$keys   = array();
 		$result = $this->destination->query($mapping->composeDestinationExistingKeysQuery());
 
 		foreach ($result as $row) {
-			$keys[] = $this->filter($mapping, $row)[$mapping->getKey()];
+			$keys[] = $row[$mapping->getKey()];
 		}
 
 		return $keys;
@@ -183,7 +210,7 @@ class Synchronizer
 		$result = $this->source->query($mapping->composeSourceExistingKeysQuery());
 
 		foreach ($result as $row) {
-			$keys[] = $this->filter($mapping, $row)[$mapping->getKey()];
+			$keys[] = $row[$mapping->getKey()];
 		}
 
 		return $keys;
@@ -265,10 +292,11 @@ class Synchronizer
 			return $this->destination->query(sprintf('TRUNCATE TABLE %s', $mapping->getDestination()));
 		}
 
-		$keys_not_in_source       = array_diff($destination_keys, $source_keys);
-		$destination_delete_query = $mapping->composeDestinationDeleteQuery($keys_not_in_source);
+		$filtered_source_keys     = $this->filterKeys($mapping, $source_keys);
+		$destination_keys         = array_diff($destination_keys, $filtered_source_keys);
+		$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
 
-		if (!count($keys_not_in_source)) {
+		if (!count($destination_keys)) {
 			return NULL;
 		}
 
@@ -281,14 +309,20 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$keys_not_in_destination = array_diff($source_keys, $destination_keys);
-		$source_select_query     = $mapping->composeSourceSelectQuery($keys_not_in_destination);
+		foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
+			if (in_array($key, $destination_keys)) {
+				unset($source_keys[$i]);
+			}
+		}
 
-		if (!count($keys_not_in_destination)) {
+		if (!count($source_keys)) {
 			return NULL;
 		}
 
-		foreach ($this->source->query($source_select_query, PDO::FETCH_ASSOC) as $i => $row) {
+		$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
+		$insert_results      = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
+
+		foreach ($insert_results as $i => $row) {
 			if (!$i) {
 				$insert_statement = $this->destination->prepare(sprintf(
 					'INSERT INTO %s (%s) VALUES(%s)',

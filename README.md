@@ -1,7 +1,7 @@
 ```php
 
 $sync  = new Devour\Synchronizer();
-$table = new Devour\Table('events');
+$table = new Devour\Mapping('events');
 
 $table->addKey('id')
 $table->setSource('evmas');

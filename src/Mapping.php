@@ -178,7 +178,7 @@ class Mapping
 		return $this->compose(
 			'DELETE FROM %s WHERE %s',
 			$this->destination,
-			$this->makeInKeys($keys)
+			$this->makeDestinationInKeys($keys)
 		);
 	}
 
@@ -216,10 +216,11 @@ class Mapping
 	public function composeSourceSelectQuery($keys)
 	{
 		return $this->compose(
-			'SELECT %s FROM %s WHERE %s',
+			'SELECT %s FROM %s WHERE %s AND %s',
 			$this->makeSourceFields(),
 			$this->makeSourceFrom(),
-			$this->makeInKeys($keys)
+			$this->makeSourceWheres(),
+			$this->makeSourceInKeys($keys)
 		);
 	}
 
@@ -234,7 +235,7 @@ class Mapping
 			$this->makeSourceKey(),
 			$this->makeSourceFrom(),
 			$this->makeSourceUpdateWheres(),
-			$this->makeInKeys($existing_keys)
+			$this->makeSourceInKeys($existing_keys)
 		);
 	}
 
@@ -281,7 +282,7 @@ class Mapping
 	/**
 	 *
 	 */
-	protected function makeInKeys(array $keys)
+	protected function makeDestinationInKeys(array $keys)
 	{
 		return sprintf(
 			'%s IN(%s)',
@@ -320,6 +321,25 @@ class Mapping
 		$source = [sprintf('%s %s', $this->source, $this->destination)];
 
 		return implode(' LEFT JOIN ',  array_merge($source, $this->makeSourceJoins()));
+	}
+
+
+	/**
+	 *
+	 */
+	protected function makeSourceInKeys(array $keys)
+	{
+		return sprintf(
+			'%s IN(%s)',
+			$this->fields[$this->key],
+			implode(', ', array_map(function($key) {
+				if (is_string($key)) {
+					return sprintf("'%s'", $key);
+				} else {
+					return $key;
+				}
+			}, $keys))
+		);
 	}
 
 
