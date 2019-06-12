@@ -69,8 +69,8 @@ class Synchronizer
 	{
 		$destination = $mapping->getDestination();
 
-		$this->mappings[$destination]   = $mapping;
 		$this->synced[$destination]   = FALSE;
+		$this->mappings[$destination] = $mapping;
 		$this->truncate[$destination] = $truncate;
 	}
 
@@ -140,7 +140,7 @@ class Synchronizer
 	 */
 	protected function filter(Mapping $mapping, array $row)
 	{
-		foreach ($row as $column => $value) {
+		foreach (array_keys($row) as $column) {
 			foreach ($mapping->getFilters($column) as $filter) {
 				if (!isset($this->filters[$filter])) {
 					throw new RuntimeException(sprintf(
@@ -150,7 +150,7 @@ class Synchronizer
 					));
 				}
 
-				$row[$column] = $this->filters[$filter]($value);
+				$row[$column] = $this->filters[$filter]($row[$column], $row);
 			}
 		}
 
@@ -164,10 +164,10 @@ class Synchronizer
 	protected function getExistingDestinationKeys(Mapping $mapping)
 	{
 		$keys   = array();
-		$result = $this->source->query($mapping->composeDestinationExistingKeysQuery());
+		$result = $this->destination->query($mapping->composeDestinationExistingKeysQuery());
 
 		foreach ($result as $row) {
-			$keys[] = $row[$mapping->getKey()];
+			$keys[] = $this->filter($mapping, $row)[$mapping->getKey()];
 		}
 
 		return $keys;
@@ -183,7 +183,7 @@ class Synchronizer
 		$result = $this->source->query($mapping->composeSourceExistingKeysQuery());
 
 		foreach ($result as $row) {
-			$keys[] = $row[$mapping->getKey()];
+			$keys[] = $this->filter($mapping, $row)[$mapping->getKey()];
 		}
 
 		return $keys;
@@ -193,7 +193,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function getUpdateSourceKeys(Mapping $mapping, array $source_keys)
+	protected function getUpdatedSourceKeys(Mapping $mapping, array $source_keys)
 	{
 		$keys   = array();
 		$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
@@ -226,6 +226,16 @@ class Synchronizer
 
 		array_push($this->stack, $name);
 
+
+		//
+		// TODO: Get last synchronizer run on this mapping and set last_synced, for now fake:
+		//
+
+		$mapping->addParam('last_synced', date('Y-m-d'));
+
+		//
+
+
 		foreach ($mapping->getRequirements() as $requirement) {
 			$this->syncMapping($requirement, $force_update);
 		}
@@ -233,11 +243,13 @@ class Synchronizer
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 
+		var_dump(count($source_keys), count($destination_keys));
+
 		$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
 		$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
 
 		if (!$force_update) {
-			$this->syncMappingUpdates($mapping, $this->getUpdateSourceKeys($mapping, $source_keys));
+			$this->syncMappingUpdates($mapping, $this->getUpdatedSourceKeys($mapping, $source_keys));
 		} else {
 			$this->syncMappingUpdates($mapping, array_intersect($source_keys, $destination_keys));
 		}
@@ -255,10 +267,14 @@ class Synchronizer
 			return $this->destination->query(sprintf('TRUNCATE TABLE %s', $mapping->getDestination()));
 		}
 
-		$destination_delete_query = $mapping->composeDestinationDeleteQuery(array_diff(
-			$destination_keys,
-			$source_keys
-		));
+		$keys_not_in_source       = array_diff($destination_keys, $source_keys);
+		$destination_delete_query = $mapping->composeDestinationDeleteQuery($keys_not_in_source);
+
+		var_dump(count($keys_not_in_source));
+
+		if (!count($keys_not_in_source)) {
+			return NULL;
+		}
 
 		return $this->destination->query($destination_delete_query);
 	}
@@ -269,12 +285,16 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$source_select_query = $mapping->composeSourceSelectQuery(array_diff(
-			$source_keys,
-			$destination_keys
-		));
+		$keys_not_in_destination = array_diff($source_keys, $destination_keys);
+		$source_select_query     = $mapping->composeSourceSelectQuery($keys_not_in_destination);
 
-		foreach ($this->source->query($source_select_query) as $i => $row) {
+		var_dump(count($keys_not_in_destination));
+
+		if (!count($keys_not_in_destination)) {
+			return NULL;
+		}
+
+		foreach ($this->source->query($source_select_query, PDO::FETCH_ASSOC) as $i => $row) {
 			if (!$i) {
 				$insert_statement = $this->destination->prepare(sprintf(
 					'INSERT INTO %s (%s) VALUES(%s)',
@@ -284,7 +304,11 @@ class Synchronizer
 				));
 			}
 
-			$insert_statement->execute($this->filter($mapping, $row));
+			foreach ($this->filter($mapping, $row) as $column => $value) {
+				$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+			}
+
+			$insert_statement->execute();
 		}
 	}
 
@@ -295,6 +319,10 @@ class Synchronizer
 	protected function syncMappingUpdates(Mapping $mapping, array $source_keys)
 	{
 		$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
+
+		if (!$source_keys) {
+			return NULL;
+		}
 
 		foreach ($this->source->query($source_select_query) as $i => $row) {
 			if (!$i) {
@@ -307,6 +335,23 @@ class Synchronizer
 			}
 
 			$update_statement->execute($this->filter($mapping, $row));
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	private function getPdoType($value)
+	{
+		if (is_int($value)) {
+			return PDO::PARAM_INT;
+		} elseif (is_bool($value)) {
+			return PDO::PARAM_BOOL;
+		} elseif (is_null($value)) {
+			return PDO::PARAM_NULL;
+		} else {
+			return PDO::PARAM_STR;
 		}
 	}
 }

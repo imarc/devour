@@ -262,7 +262,10 @@ class Mapping
 	 */
 	public function getFilters($alias)
 	{
-		return $this->filters[$alias] ?? [];
+		return array_merge(
+			$this->filters['*'] ?? [],
+			$this->filters[$alias] ?? []
+		);
 	}
 
 
@@ -316,7 +319,7 @@ class Mapping
 	{
 		$source = [sprintf('%s %s', $this->source, $this->destination)];
 
-		return implode(' LEFT JOIN ',  $source + $this->makeSourceJoins());
+		return implode(' LEFT JOIN ',  array_merge($source, $this->makeSourceJoins()));
 	}
 
 
@@ -351,7 +354,7 @@ class Mapping
 	 */
 	protected function makeSourceUpdateWheres()
 	{
-		return implode(' AND ', $this->updateWheres) ?: 'TRUE';
+		return implode(' AND ', $this->updateWheres) ?: 'NULL IS NULL';
 	}
 
 
@@ -360,6 +363,6 @@ class Mapping
 	 */
 	protected function makeSourceWheres()
 	{
-		return implode(' AND ', $this->wheres) ?: 'TRUE';
+		return implode(' AND ', $this->wheres) ?: 'NULL IS NULL';
 	}
 }
