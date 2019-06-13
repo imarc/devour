@@ -87,8 +87,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function run(array $mappings, $force_update = FALSE)
+	public function run(array $mappings = array(), $force_update = FALSE)
 	{
+		if (!count($mappings)) {
+			$mappings = array_keys($this->mappings);
+		}
+
 		foreach ($mappings as $mapping) {
 			if (!isset($this->mappings[$mapping])) {
 				throw new RuntimeException(sprintf(
