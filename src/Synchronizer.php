@@ -289,10 +289,10 @@ class Synchronizer
 		$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
 		$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
 
-		if (!$force_update) {
-			$this->syncMappingUpdates($mapping, $this->getUpdatedSourceKeys($mapping, $source_keys));
+		if ($force_update) {
+			$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 		} else {
-			$this->syncMappingUpdates($mapping, array_intersect($source_keys, $destination_keys));
+			$this->syncMappingUpdates($mapping, $source_keys);
 		}
 
 		$this->synced[array_pop($this->stack)] = TRUE;
@@ -376,29 +376,54 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingUpdates(Mapping $mapping, array $source_keys)
+	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys = array())
 	{
-		$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
-
 		if (!$source_keys) {
 			return NULL;
 		}
 
+		if (!$destination_keys) {
+			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
+
+		} else {
+			foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
+				if (!in_array($key, $destination_keys)) {
+					unset($source_keys[$i]);
+				}
+			}
+		}
+
 		foreach (array_chunk($source_keys, 1000) as $source_keys) {
-			foreach ($this->source->query($source_select_query) as $i => $row) {
+			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
+
+			foreach ($this->source->query($source_select_query, PDO::FETCH_ASSOC) as $i => $row) {
 				if (!$i) {
 					$update_statement = $this->destination->prepare(sprintf(
 						'UPDATE %s SET %s WHERE %s',
 						$mapping->getDestination(),
 						$this->composeSetParams($row),
-						sprintf('%s = :%s', $mapping->getKey(), $mapping->getKey())
+						sprintf('%s = :_%s', $mapping->getKey(), $mapping->getKey())
 					));
 				}
 
+				foreach ($this->filter($mapping, $row) as $column => $value) {
+					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+
+					if ($column == $mapping->getKey()) {
+						$update_statement->bindValue(':_' . $column, $value, $this->getPdoType($value));
+					}
+				}
+
 				try {
-					$update_statement->execute($this->filter($mapping, $row));
+					$update_statement->execute();
+
 				} catch (\Exception $e) {
-					echo $e->getMessage();
+					echo sprintf(
+						'Failed updating %s with the following: %s  The database returned: %s',
+						ucwords(str_replace('_', ' ', $mapping->getDestination())),
+						json_encode($this->filter($mapping, $row)),
+						$e->getMessage()
+					);
 				}
 			}
 		}
