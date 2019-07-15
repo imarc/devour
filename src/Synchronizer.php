@@ -69,9 +69,9 @@ class Synchronizer
 	{
 		$destination = $mapping->getDestination();
 
-		$this->synced[$destination]   = FALSE;
 		$this->mappings[$destination] = $mapping;
 		$this->truncate[$destination] = $truncate;
+		$this->synced[$destination]   = FALSE;
 	}
 
 
@@ -144,7 +144,11 @@ class Synchronizer
 	 */
 	protected function filter(Mapping $mapping, array $row)
 	{
+		$data = array();
+
 		foreach (array_keys($row) as $column) {
+			$data[$column] = $row[$column];
+
 			foreach ($mapping->getFilters($column) as $filter) {
 				if (!isset($this->filters[$filter])) {
 					throw new RuntimeException(sprintf(
@@ -154,11 +158,11 @@ class Synchronizer
 					));
 				}
 
-				$row[$column] = $this->filters[$filter]($row[$column], $row);
+				$data[$column] = $this->filters[$filter]($data[$column], $row);
 			}
 		}
 
-		return $row;
+		return $data;
 	}
 
 
@@ -210,8 +214,12 @@ class Synchronizer
 	 */
 	protected function getExistingSourceKeys(Mapping $mapping)
 	{
-		$keys   = array();
-		$result = $this->source->query($mapping->composeSourceExistingKeysQuery());
+		try {
+			$keys   = array();
+			$result = $this->source->query($mapping->composeSourceExistingKeysQuery());
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
 
 		foreach ($result as $row) {
 			$keys[] = $row[$mapping->getKey()];
@@ -226,8 +234,12 @@ class Synchronizer
 	 */
 	protected function getUpdatedSourceKeys(Mapping $mapping, array $source_keys)
 	{
-		$keys   = array();
-		$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
+		try {
+			$keys   = array();
+			$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
+		} catch (\Exception $e) {
+			echo $e->getMessage();
+		}
 
 		foreach ($result as $row) {
 			$keys[] = $row[$mapping->getKey()];
@@ -323,24 +335,40 @@ class Synchronizer
 			return NULL;
 		}
 
-		$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
-		$insert_results      = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
+		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
-		foreach ($insert_results as $i => $row) {
-			if (!$i) {
-				$insert_statement = $this->destination->prepare(sprintf(
-					'INSERT INTO %s (%s) VALUES(%s)',
-					$mapping->getDestination(),
-					$this->composeColumns($row),
-					$this->composeParams($row)
-				));
+			try {
+				$insert_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
+			} catch (\Exception $e) {
+				echo $e->getMessage();
 			}
 
-			foreach ($this->filter($mapping, $row) as $column => $value) {
-				$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
-			}
+			foreach ($insert_results as $i => $row) {
+				if (!$i) {
+					$insert_statement = $this->destination->prepare(sprintf(
+						'INSERT INTO %s (%s) VALUES(%s)',
+						$mapping->getDestination(),
+						$this->composeColumns($row),
+						$this->composeParams($row)
+					));
+				}
 
-			$insert_statement->execute();
+				foreach ($this->filter($mapping, $row) as $column => $value) {
+					$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+				}
+
+				try {
+					$insert_statement->execute();
+				} catch (\Exception $e) {
+					echo sprintf(
+						'Failed inserting into %s with the following: %s  The database returned: %s',
+						ucwords(str_replace('_', ' ', $mapping->getDestination())),
+						json_encode($this->filter($mapping, $row)),
+						$e->getMessage()
+					);
+				}
+			}
 		}
 	}
 
@@ -356,17 +384,23 @@ class Synchronizer
 			return NULL;
 		}
 
-		foreach ($this->source->query($source_select_query) as $i => $row) {
-			if (!$i) {
-				$update_statement = $this->destination->prepare(sprintf(
-					'UPDATE %s SET %s WHERE %s',
-					$mapping->getDestination(),
-					$this->composeSetParams($row),
-					sprintf('%s = :%s', $mapping->getKey(), $mapping->getKey())
-				));
-			}
+		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+			foreach ($this->source->query($source_select_query) as $i => $row) {
+				if (!$i) {
+					$update_statement = $this->destination->prepare(sprintf(
+						'UPDATE %s SET %s WHERE %s',
+						$mapping->getDestination(),
+						$this->composeSetParams($row),
+						sprintf('%s = :%s', $mapping->getKey(), $mapping->getKey())
+					));
+				}
 
-			$update_statement->execute($this->filter($mapping, $row));
+				try {
+					$update_statement->execute($this->filter($mapping, $row));
+				} catch (\Exception $e) {
+					echo $e->getMessage();
+				}
+			}
 		}
 	}
 

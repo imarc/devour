@@ -5,17 +5,13 @@ namespace Devour;
 /**
  *
  */
-class Trim
+class Y2False
 {
 	/**
 	 *
 	 */
 	public function __invoke($value, array $context = array())
 	{
-		if (!is_string($value)) {
-			return $value;
-		}
-
-		return trim($value) ?: NULL;
+		return strtolower($value) != 'y';
 	}
 }
