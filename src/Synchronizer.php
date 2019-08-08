@@ -325,6 +325,8 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
+		$insert_results = array();
+
 		foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
 			if (in_array($key, $destination_keys)) {
 				unset($source_keys[$i]);
@@ -341,7 +343,11 @@ class Synchronizer
 			try {
 				$insert_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
 			} catch (\Exception $e) {
-				echo $e->getMessage();
+				echo sprintf(
+					"Failed selecting insert results with query: %s  The database returned: %s",
+					$source_select_query,
+					$e->getMessage()
+				);
 			}
 
 			foreach ($insert_results as $i => $row) {
