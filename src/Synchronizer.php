@@ -274,13 +274,13 @@ class Synchronizer
 		// TODO: Get last synchronizer run on this mapping and set last_synced, for now fake:
 		//
 
-		$mapping->addParam('last_synced', date('Y-m-d'));
+		$mapping->addParam('lastSynced', date('Y-m-d'));
 
 		//
 
 
-		foreach ($mapping->getRequirements() as $requirement) {
-			$this->syncMapping($requirement, $force_update);
+		foreach ($mapping->getDependencies() as $dependency) {
+			$this->syncMapping($dependency, $force_update);
 		}
 
 		$source_keys      = $this->getExistingSourceKeys($mapping);

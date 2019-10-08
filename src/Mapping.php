@@ -10,6 +10,18 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $dependencies = array();
+
+
+	/**
+	 *
+	 */
+	protected $destination = NULL;
+
+
+	/**
+	 *
+	 */
 	protected $fields = array();
 
 
@@ -40,13 +52,7 @@ class Mapping
 	/**
 	 *
 	 */
-	protected $destination = NULL;
-
-
-	/**
-	 *
-	 */
-	protected $requirements = array();
+	protected $removeWheres = array();
 
 
 	/**
@@ -76,6 +82,18 @@ class Mapping
 		$this->source      = $source;
 		$this->destination = $destination;
 	}
+
+
+	/**
+	 *
+	 */
+	public function addDependency($dependency)
+	{
+		$this->dependencies[] = $dependency;
+
+		return $this;
+	}
+
 
 	/**
 	 *
@@ -132,9 +150,19 @@ class Mapping
 	/**
 	 *
 	 */
-	public function addRequirement($requirement)
+	public function addRemoveWhere($condition)
 	{
-		$this->requirements[] = $requirement;
+		$this->removeWheres[] = $condition;
+
+		return $this;
+	}
+
+	/**
+	 *
+	 */
+	public function addUpdateWhere($condition)
+	{
+		$this->updateWheres[] = $condition;
 
 		return $this;
 	}
@@ -143,13 +171,9 @@ class Mapping
 	/**
 	 *
 	 */
-	public function addWhere($condition, $update_only = FALSE)
+	public function addWhere($condition)
 	{
-		if ($update_only) {
-			$this->updateWheres[] = $condition;
-		} else {
-			$this->wheres[] = $condition;
-		}
+		$this->wheres[] = $condition;
 
 		return $this;
 	}
@@ -189,9 +213,10 @@ class Mapping
 	public function composeDestinationExistingKeysQuery()
 	{
 		return $this->compose(
-			'SELECT %s FROM %s',
+			'SELECT %s FROM %s WHERE %s',
 			$this->key,
-			$this->destination
+			$this->destination,
+			$this->makeDestinationRemoveWheres()
 		);
 	}
 
@@ -273,9 +298,22 @@ class Mapping
 	/**
 	 *
 	 */
-	public function getRequirements()
+	public function getDependencies()
 	{
-		return $this->requirements;
+		return $this->dependencies;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function makeDestinationRemoveWheres()
+	{
+		if (!$this->removeWheres) {
+			return 'TRUE';
+		}
+
+		return implode(' AND ', $this->removeWheres);
 	}
 
 
