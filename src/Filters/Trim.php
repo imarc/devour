@@ -12,10 +12,10 @@ class Trim
 	 */
 	public function __invoke($value, array $context = array())
 	{
-		if (!is_string($value)) {
-			return $value;
+		if (is_string($value)) {
+			$value = trim($value);
 		}
 
-		return trim($value) ?: NULL;
+		return $value !== '' ? $value : NULL;
 	}
 }
