@@ -52,12 +52,6 @@ class Mapping
 	/**
 	 *
 	 */
-	protected $removeWheres = array();
-
-
-	/**
-	 *
-	 */
 	protected $source = NULL;
 
 
@@ -150,16 +144,6 @@ class Mapping
 	/**
 	 *
 	 */
-	public function addRemoveWhere($condition)
-	{
-		$this->removeWheres[] = $condition;
-
-		return $this;
-	}
-
-	/**
-	 *
-	 */
 	public function addUpdateWhere($condition)
 	{
 		$this->updateWheres[] = $condition;
@@ -213,10 +197,9 @@ class Mapping
 	public function composeDestinationExistingKeysQuery()
 	{
 		return $this->compose(
-			'SELECT %s FROM %s WHERE %s',
+			'SELECT %s FROM %s',
 			$this->key,
-			$this->destination,
-			$this->makeDestinationRemoveWheres()
+			$this->destination
 		);
 	}
 
@@ -301,19 +284,6 @@ class Mapping
 	public function getDependencies()
 	{
 		return $this->dependencies;
-	}
-
-
-	/**
-	 *
-	 */
-	protected function makeDestinationRemoveWheres()
-	{
-		if (!$this->removeWheres) {
-			return 'TRUE';
-		}
-
-		return implode(' AND ', $this->removeWheres);
 	}
 
 
