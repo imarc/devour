@@ -327,9 +327,11 @@ class Synchronizer
 	{
 		$insert_results = array();
 
-		foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
-			if (in_array($key, $destination_keys)) {
-				unset($source_keys[$i]);
+		if (!$this->truncate[$mapping->getDestination()]) {
+			foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
+				if (in_array($key, $destination_keys)) {
+					unset($source_keys[$i]);
+				}
 			}
 		}
 
