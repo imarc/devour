@@ -297,7 +297,7 @@ class Synchronizer
 			if ($force_update) {
 				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 			} else {
-				$this->syncMappingUpdates($mapping, $source_keys);
+				$this->syncMappingUpdates($mapping, $source_keys, array());
 			}
 
 		}
@@ -311,15 +311,14 @@ class Synchronizer
 	 */
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$filtered_source_keys     = $this->filterKeys($mapping, $source_keys);
-		$destination_keys         = array_diff($destination_keys, $filtered_source_keys);
-		$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
+		$filtered_source_keys = $this->filterKeys($mapping, $source_keys);
+		$destination_keys     = array_diff($destination_keys, $filtered_source_keys);
 
 		if (!count($destination_keys)) {
 			return NULL;
 		}
 
-		return $this->destination->query($destination_delete_query);
+		return $this->destination->query($mapping->composeDestinationDeleteQuery($destination_keys));
 	}
 
 
@@ -385,15 +384,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys = array())
+	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		if (!$source_keys) {
-			return NULL;
-		}
+		$update_results = array();
 
 		if (!$destination_keys) {
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
-
 		} else {
 			foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
 				if (!in_array($key, $destination_keys)) {
@@ -402,10 +398,24 @@ class Synchronizer
 			}
 		}
 
+		if (!count($source_keys)) {
+			return NULL;
+		}
+
 		foreach (array_chunk($source_keys, 1000) as $source_keys) {
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
-			foreach ($this->source->query($source_select_query, PDO::FETCH_ASSOC) as $i => $row) {
+			try {
+				$update_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
+			} catch (\Exception $e) {
+				echo sprintf(
+					"Failed selecting update results with query: %s  The database returned: %s",
+					$source_select_query,
+					$e->getMessage()
+				);
+			}
+
+			foreach ($update_results as $i => $row) {
 				if (!$i) {
 					$update_statement = $this->destination->prepare(sprintf(
 						'UPDATE %s SET %s WHERE %s',
