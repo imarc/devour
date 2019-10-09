@@ -286,13 +286,20 @@ class Synchronizer
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 
-		$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
-		$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
+		if ($this->truncate[$mapping->getDestination()]) {
+			$this->syncMappingDeletes($mapping, array(), $destination_keys);
+			$this->syncMappingInserts($mapping, $source_keys, array());
 
-		if ($force_update) {
-			$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 		} else {
-			$this->syncMappingUpdates($mapping, $source_keys);
+			$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
+			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
+
+			if ($force_update) {
+				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
+			} else {
+				$this->syncMappingUpdates($mapping, $source_keys);
+			}
+
 		}
 
 		$this->synced[array_pop($this->stack)] = TRUE;
@@ -304,10 +311,6 @@ class Synchronizer
 	 */
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		if ($this->truncate[$mapping->getDestination()]) {
-			return $this->destination->query(sprintf('TRUNCATE TABLE %s', $mapping->getDestination()));
-		}
-
 		$filtered_source_keys     = $this->filterKeys($mapping, $source_keys);
 		$destination_keys         = array_diff($destination_keys, $filtered_source_keys);
 		$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
@@ -327,11 +330,9 @@ class Synchronizer
 	{
 		$insert_results = array();
 
-		if (!$this->truncate[$mapping->getDestination()]) {
-			foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
-				if (in_array($key, $destination_keys)) {
-					unset($source_keys[$i]);
-				}
+		foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
+			if (in_array($key, $destination_keys)) {
+				unset($source_keys[$i]);
 			}
 		}
 
