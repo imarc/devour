@@ -234,15 +234,18 @@ class Synchronizer
 	 */
 	protected function getUpdatedSourceKeys(Mapping $mapping, array $source_keys)
 	{
-		try {
-			$keys   = array();
-			$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
-		} catch (\Exception $e) {
-			echo $e->getMessage();
-		}
+		$keys = array();
 
-		foreach ($result as $row) {
-			$keys[] = $row[$mapping->getKey()];
+		if ($source_keys) {
+			try {
+				$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
+			} catch (\Exception $e) {
+				echo $e->getMessage();
+			}
+
+			foreach ($result as $row) {
+				$keys[] = $row[$mapping->getKey()];
+			}
 		}
 
 		return $keys;
@@ -277,7 +280,6 @@ class Synchronizer
 		$mapping->addParam('lastSynced', date('Y-m-d'));
 
 		//
-
 
 		foreach ($mapping->getDependencies() as $dependency) {
 			$this->syncMapping($dependency, $force_update);
