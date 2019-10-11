@@ -237,14 +237,16 @@ class Synchronizer
 		$keys = array();
 
 		if ($source_keys) {
-			try {
-				$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
-			} catch (\Exception $e) {
-				echo $e->getMessage();
-			}
+			foreach (array_chunk($source_keys, 1000) as $source_keys) {
+				try {
+					$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
+				} catch (\Exception $e) {
+					echo $e->getMessage();
+				}
 
-			foreach ($result as $row) {
-				$keys[] = $row[$mapping->getKey()];
+				foreach ($result as $row) {
+					$keys[] = $row[$mapping->getKey()];
+				}
 			}
 		}
 
