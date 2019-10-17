@@ -326,7 +326,11 @@ class Mapping
 	 */
 	protected function makeSourceFrom()
 	{
-		$source = [$this->source];
+		if (preg_match('/.+\s+.+/', $this->source)) {
+			$source = [$this->source];
+		} else {
+			$source = [sprintf('%s %s', $this->source, $this->source)];
+		}
 
 		return implode(' LEFT JOIN ',  array_merge($source, $this->makeSourceJoins()));
 	}
