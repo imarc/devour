@@ -3,6 +3,7 @@
 namespace Devour;
 
 use PDO;
+use DateTime;
 use RuntimeException;
 
 /**
@@ -160,6 +161,10 @@ class Synchronizer
 
 				$data[$column] = $this->filters[$filter]($data[$column], $row);
 			}
+
+			if ($data[$column] instanceof DateTime) {
+				$data[$column] = $data[$column]->format('Y-m-d H:i:s');
+			}
 		}
 
 		return $data;
@@ -274,7 +279,6 @@ class Synchronizer
 
 		array_push($this->stack, $name);
 
-
 		//
 		// TODO: Get last synchronizer run on this mapping and set last_synced, for now fake:
 		//
@@ -289,6 +293,8 @@ class Synchronizer
 
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
+
+		echo sprintf('Syncing %s' . PHP_EOL, $name);
 
 		if ($this->truncate[$mapping->getDestination()]) {
 			$this->syncMappingDeletes($mapping, array(), $destination_keys);
