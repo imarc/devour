@@ -326,7 +326,7 @@ class Mapping
 	 */
 	protected function makeSourceFrom()
 	{
-		$source = [sprintf('%s %s', $this->source, $this->destination)];
+		$source = [$this->source];
 
 		return implode(' LEFT JOIN ',  array_merge($source, $this->makeSourceJoins()));
 	}
