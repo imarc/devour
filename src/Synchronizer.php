@@ -176,6 +176,14 @@ class Synchronizer
 	 */
 	protected function filterKeys(Mapping $mapping, array $keys)
 	{
+		if (is_array($mapping->getKey())) {
+			foreach ($keys as $i => $key) {
+				$keys[$i] = $this->filter($mapping, $key);
+			}
+
+			return $keys;
+		}
+
 		$filters = $mapping->getFilters($mapping->getKey());
 
 		foreach ($filters as $filter) {
@@ -204,10 +212,14 @@ class Synchronizer
 	protected function getExistingDestinationKeys(Mapping $mapping)
 	{
 		$keys   = array();
-		$result = $this->destination->query($mapping->composeDestinationExistingKeysQuery());
+		$result = $this->destination->query($mapping->composeDestinationExistingKeysQuery(), PDO::FETCH_ASSOC);
 
 		foreach ($result as $row) {
-			$keys[] = $row[$mapping->getKey()];
+			if (!is_array($mapping->getKey())) {
+				$keys[] = $row[$mapping->getKey()];
+			} else {
+				$keys[] = $row;
+			}
 		}
 
 		return $keys;
@@ -221,13 +233,17 @@ class Synchronizer
 	{
 		try {
 			$keys   = array();
-			$result = $this->source->query($mapping->composeSourceExistingKeysQuery());
+			$result = $this->source->query($mapping->composeSourceExistingKeysQuery(), PDO::FETCH_ASSOC);
 		} catch (\Exception $e) {
 			echo $e->getMessage();
 		}
 
 		foreach ($result as $row) {
-			$keys[] = $row[$mapping->getKey()];
+			if (!is_array($mapping->getKey())) {
+				$keys[] = $row[$mapping->getKey()];
+			} else {
+				$keys[] = $row;
+			}
 		}
 
 		return $keys;
@@ -322,7 +338,9 @@ class Synchronizer
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
 		$filtered_source_keys = $this->filterKeys($mapping, $source_keys);
-		$destination_keys     = array_diff($destination_keys, $filtered_source_keys);
+		$destination_keys     = array_udiff($destination_keys, $filtered_source_keys, functioN($a, $b) {
+			return $a == $b;
+		});
 
 		if (!count($destination_keys)) {
 			return NULL;

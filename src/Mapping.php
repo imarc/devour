@@ -196,11 +196,13 @@ class Mapping
 	 */
 	public function composeDestinationExistingKeysQuery()
 	{
-		return $this->compose(
+		$sql = $this->compose(
 			'SELECT %s FROM %s',
-			$this->key,
+			$this->makeDestinationKey(),
 			$this->destination
 		);
+
+		return $sql;
 	}
 
 
@@ -209,12 +211,14 @@ class Mapping
 	 */
 	public function composeSourceExistingKeysQuery()
 	{
-		return $this->compose(
+		$sql = $this->compose(
 			'SELECT %s FROM %s WHERE %s',
 			$this->makeSourceKey(),
 			$this->makeSourceFrom(),
 			$this->makeSourceWheres()
 		);
+
+		return $sql;
 	}
 
 
@@ -223,13 +227,15 @@ class Mapping
 	 */
 	public function composeSourceSelectQuery($keys)
 	{
-		return $this->compose(
+		$sql = $this->compose(
 			'SELECT %s FROM %s WHERE %s AND %s',
 			$this->makeSourceFields(),
 			$this->makeSourceFrom(),
 			$this->makeSourceWheres(),
 			$this->makeSourceInKeys($keys)
 		);
+
+		return $sql;
 	}
 
 
@@ -238,13 +244,15 @@ class Mapping
 	 */
 	public function composeSourceUpdatedKeysQuery(array $existing_keys)
 	{
-		return $this->compose(
+		$sql = $this->compose(
 			'SELECT %s FROM %s WHERE %s AND %s',
 			$this->makeSourceKey(),
 			$this->makeSourceFrom(),
 			$this->makeSourceUpdateWheres(),
 			$this->makeSourceInKeys($existing_keys)
 		);
+
+		return $sql;
 	}
 
 
@@ -309,6 +317,19 @@ class Mapping
 	/**
 	 *
 	 */
+	protected function makeDestinationKey()
+	{
+		if (is_array($this->key)) {
+			return join(', ', $this->key);
+		}
+
+		return $this->key;
+	}
+
+
+	/**
+	 *
+	 */
 	protected function makeSourceFields()
 	{
 		$fields = array();
@@ -341,17 +362,25 @@ class Mapping
 	 */
 	protected function makeSourceInKeys(array $keys)
 	{
-		return sprintf(
-			'%s IN(%s)',
-			$this->fields[$this->key],
-			implode(', ', array_map(function($key) {
-				if (is_string($key)) {
-					return sprintf("'%s'", $key);
-				} else {
-					return $key;
-				}
-			}, $keys))
-		);
+		if (is_array($this->getKey())) {
+			return sprintf('(%s)', implode(' OR ', array_map(function($key) {
+				return sprintf('(%s)', implode(' AND ', array_map(function($field) use ($key) {
+					if (is_string($key[$field])) {
+						return sprintf("%s = '%s'", $this->fields[$field], $key[$field]);
+					} else {
+						return sprintf("%s = %s", $this->fields[$field], $key[$field]);
+					}
+				}, $this->getKey())));
+			}, $keys)));
+		}
+
+		return sprintf('%s IN(%s)', $this->fields[$this->getKey()], implode(', ', array_map(function($value) {
+			if (is_string($value)) {
+				return sprintf("'%s'", $value);
+			} else {
+				return $value;
+			}
+		}, $keys)));
 	}
 
 
@@ -377,6 +406,12 @@ class Mapping
 	 */
 	protected function makeSourceKey()
 	{
+		if (is_array($this->key)) {
+			return join(', ', array_map(function($field) {
+				return sprintf('%s as %s', $this->fields[$field], $field);
+			}, $this->key));
+		}
+
 		return sprintf('%s as %s', $this->fields[$this->key], $this->key);
 	}
 
