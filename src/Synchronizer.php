@@ -266,7 +266,11 @@ class Synchronizer
 				}
 
 				foreach ($result as $row) {
-					$keys[] = $row[$mapping->getKey()];
+					if (!is_array($mapping->getKey())) {
+						$keys[] = $row[$mapping->getKey()];
+					} else {
+						$keys[] = $row;
+					}
 				}
 			}
 		}
