@@ -75,6 +75,8 @@ class Mapping
 		$this->key         = $key;
 		$this->source      = $source;
 		$this->destination = $destination;
+
+		settype($this->key, 'array');
 	}
 
 
@@ -300,17 +302,17 @@ class Mapping
 	 */
 	protected function makeDestinationInKeys(array $keys)
 	{
-		return sprintf(
-			'%s IN(%s)',
-			$this->key,
-			implode(', ', array_map(function($key) {
-				if (is_string($key)) {
-					return sprintf("'%s'", $key);
+		return sprintf('(%s)', implode(' OR ', array_map(function($key) {
+			$group = count($this->key) > 1 ? '(%s)' : '%s';
+
+			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
+				if (is_string($key[$field])) {
+					return sprintf("%s = '%s'", $field, $key[$field]);
 				} else {
-					return $key;
+					return sprintf("%s = %s", $field, $key[$field]);
 				}
-			}, $keys))
-		);
+			}, $this->key)));
+		}, $keys)));
 	}
 
 
@@ -319,11 +321,7 @@ class Mapping
 	 */
 	protected function makeDestinationKey()
 	{
-		if (is_array($this->key)) {
-			return join(', ', $this->key);
-		}
-
-		return $this->key;
+		return join(', ', $this->key);
 	}
 
 
@@ -362,24 +360,16 @@ class Mapping
 	 */
 	protected function makeSourceInKeys(array $keys)
 	{
-		if (is_array($this->getKey())) {
-			return sprintf('(%s)', implode(' OR ', array_map(function($key) {
-				return sprintf('(%s)', implode(' AND ', array_map(function($field) use ($key) {
-					if (is_string($key[$field])) {
-						return sprintf("%s = '%s'", $this->fields[$field], $key[$field]);
-					} else {
-						return sprintf("%s = %s", $this->fields[$field], $key[$field]);
-					}
-				}, $this->getKey())));
-			}, $keys)));
-		}
+		return sprintf('(%s)', implode(' OR ', array_map(function($key) {
+			$group = count($this->key) > 1 ? '(%s)' : '%s';
 
-		return sprintf('%s IN(%s)', $this->fields[$this->getKey()], implode(', ', array_map(function($value) {
-			if (is_string($value)) {
-				return sprintf("'%s'", $value);
-			} else {
-				return $value;
-			}
+			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
+				if (is_string($key[$field])) {
+					return sprintf("%s = '%s'", $this->fields[$field], $key[$field]);
+				} else {
+					return sprintf("%s = %s", $this->fields[$field], $key[$field]);
+				}
+			}, $this->key)));
 		}, $keys)));
 	}
 
@@ -406,13 +396,9 @@ class Mapping
 	 */
 	protected function makeSourceKey()
 	{
-		if (is_array($this->key)) {
-			return join(', ', array_map(function($field) {
-				return sprintf('%s as %s', $this->fields[$field], $field);
-			}, $this->key));
-		}
-
-		return sprintf('%s as %s', $this->fields[$this->key], $this->key);
+		return join(', ', array_map(function($field) {
+			return sprintf('%s as %s', $this->fields[$field], $field);
+		}, $this->key));
 	}
 
 

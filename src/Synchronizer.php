@@ -176,30 +176,8 @@ class Synchronizer
 	 */
 	protected function filterKeys(Mapping $mapping, array $keys)
 	{
-		if (is_array($mapping->getKey())) {
-			foreach ($keys as $i => $key) {
-				$keys[$i] = $this->filter($mapping, $key);
-			}
-
-			return $keys;
-		}
-
-		$filters = $mapping->getFilters($mapping->getKey());
-
-		foreach ($filters as $filter) {
-			if (!isset($this->filters[$filter])) {
-				throw new RuntimeException(sprintf(
-					'Cannot filter key with "%s", filter not registered.',
-					$column,
-					$filter
-				));
-			}
-		}
-
-		foreach (array_keys($keys) as $i) {
-			foreach ($filters as $filter) {
-				$keys[$i] = $this->filters[$filter]($keys[$i]);
-			}
+		foreach ($keys as $i => $key) {
+			$keys[$i] = $this->filter($mapping, $key);
 		}
 
 		return $keys;
@@ -211,18 +189,15 @@ class Synchronizer
 	 */
 	protected function getExistingDestinationKeys(Mapping $mapping)
 	{
-		$keys   = array();
-		$result = $this->destination->query($mapping->composeDestinationExistingKeysQuery(), PDO::FETCH_ASSOC);
+		try {
+			return $this->destination
+				->query($mapping->composeDestinationExistingKeysQuery(), PDO::FETCH_ASSOC)
+				->fetchAll()
+			;
 
-		foreach ($result as $row) {
-			if (!is_array($mapping->getKey())) {
-				$keys[] = $row[$mapping->getKey()];
-			} else {
-				$keys[] = $row;
-			}
+		} catch (\Exception $e) {
+			echo $e->getMessage();
 		}
-
-		return $keys;
 	}
 
 
@@ -232,21 +207,14 @@ class Synchronizer
 	protected function getExistingSourceKeys(Mapping $mapping)
 	{
 		try {
-			$keys   = array();
-			$result = $this->source->query($mapping->composeSourceExistingKeysQuery(), PDO::FETCH_ASSOC);
+			return $this->source
+				->query($mapping->composeSourceExistingKeysQuery(), PDO::FETCH_ASSOC)
+				->fetchAll()
+			;
+
 		} catch (\Exception $e) {
 			echo $e->getMessage();
 		}
-
-		foreach ($result as $row) {
-			if (!is_array($mapping->getKey())) {
-				$keys[] = $row[$mapping->getKey()];
-			} else {
-				$keys[] = $row;
-			}
-		}
-
-		return $keys;
 	}
 
 
@@ -255,27 +223,21 @@ class Synchronizer
 	 */
 	protected function getUpdatedSourceKeys(Mapping $mapping, array $source_keys)
 	{
-		$keys = array();
-
-		if ($source_keys) {
-			foreach (array_chunk($source_keys, 1000) as $source_keys) {
-				try {
-					$result = $this->source->query($mapping->composeSourceUpdatedKeysQuery($source_keys));
-				} catch (\Exception $e) {
-					echo $e->getMessage();
-				}
-
-				foreach ($result as $row) {
-					if (!is_array($mapping->getKey())) {
-						$keys[] = $row[$mapping->getKey()];
-					} else {
-						$keys[] = $row;
-					}
-				}
-			}
+		if (!$source_keys) {
+			return array();
 		}
 
-		return $keys;
+		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+			try {
+				return $this->source
+					->query($mapping->composeSourceUpdatedKeysQuery($source_keys))
+					->fetchAll()
+				;
+
+			} catch (\Exception $e) {
+				echo $e->getMessage();
+			}
+		}
 	}
 
 
@@ -453,15 +415,19 @@ class Synchronizer
 						'UPDATE %s SET %s WHERE %s',
 						$mapping->getDestination(),
 						$this->composeSetParams($row),
-						sprintf('%s = :_%s', $mapping->getKey(), $mapping->getKey())
+						join(' AND ', array_map(function($field) {
+							return sprintf('%s = :__%s', $field, $field);
+						}, $mapping->getKey()))
 					));
 				}
 
 				foreach ($this->filter($mapping, $row) as $column => $value) {
+					$index = array_search($column, $mapping->getKey());
+
 					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
 
-					if ($column == $mapping->getKey()) {
-						$update_statement->bindValue(':_' . $column, $value, $this->getPdoType($value));
+					if ($index !== FALSE) {
+						$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
 					}
 				}
 
