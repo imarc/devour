@@ -307,7 +307,7 @@ class Mapping
 
 			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
 				if (is_string($key[$field])) {
-					return sprintf("%s = '%s'", $field, $key[$field]);
+					return sprintf("%s = '%s'", $field, str_replace("'", "''", $key[$field]));
 				} else {
 					return sprintf("%s = %s", $field, $key[$field]);
 				}
@@ -365,7 +365,7 @@ class Mapping
 
 			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
 				if (is_string($key[$field])) {
-					return sprintf("%s = '%s'", $this->fields[$field], $key[$field]);
+					return sprintf("%s = '%s'", $this->fields[$field], str_replace("'", "''", $key[$field]));
 				} else {
 					return sprintf("%s = %s", $this->fields[$field], $key[$field]);
 				}
