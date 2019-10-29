@@ -247,7 +247,7 @@ class Mapping
 	public function composeSourceUpdatedKeysQuery(array $existing_keys)
 	{
 		$sql = $this->compose(
-			'SELECT %s FROM %s WHERE %s AND %s',
+			'SELECT %s FROM %s WHERE (%s) AND %s',
 			$this->makeSourceKey(),
 			$this->makeSourceFrom(),
 			$this->makeSourceUpdateWheres(),
@@ -407,7 +407,7 @@ class Mapping
 	 */
 	protected function makeSourceUpdateWheres()
 	{
-		return implode(' AND ', $this->updateWheres) ?: 'NULL IS NULL';
+		return implode(' OR ', $this->updateWheres) ?: 'NULL IS NULL';
 	}
 
 
