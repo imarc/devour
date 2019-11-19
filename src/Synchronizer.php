@@ -304,15 +304,27 @@ class Synchronizer
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
 		$filtered_source_keys = $this->filterKeys($mapping, $source_keys);
-		$destination_keys     = array_udiff($destination_keys, $filtered_source_keys, functioN($a, $b) {
-			return $a == $b;
+		$destination_keys     = array_udiff($destination_keys, $filtered_source_keys, function($a, $b) {
+			return $a != $b ? ($a > $b ? 1 : -1) : 0;
 		});
 
 		if (!count($destination_keys)) {
 			return NULL;
 		}
 
-		return $this->destination->query($mapping->composeDestinationDeleteQuery($destination_keys));
+		foreach (array_chunk($destination_keys, 1000) as $destination_keys) {
+			$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
+
+			try {
+				$delete_results = $this->destination->query($destination_delete_query);
+			} catch (\Exception $e) {
+				echo sprintf(
+					"Failed removing destination records with query: %s  The database returned: %s",
+					$destination_delete_query,
+					$e->getMessage()
+				);
+			}
+		}
 	}
 
 
