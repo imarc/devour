@@ -453,7 +453,7 @@ class Synchronizer
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
 		}
 
-		$diffed_keys = array_keys(array_uintersect(
+		$diffed_keys = array_keys(array_udiff(
 			$this->filterKeys($mapping, $source_keys),
 			$destination_keys,
 			[$this, 'compare']
@@ -466,7 +466,7 @@ class Synchronizer
 		}
 
 		$source_keys = array_filter($source_keys, function($key) use ($diffed_keys) {
-			return in_array($key, $diffed_keys);
+			return !in_array($key, $diffed_keys);
 		}, ARRAY_FILTER_USE_KEY);
 
 		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
