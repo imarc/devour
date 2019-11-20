@@ -11,6 +11,10 @@ use RuntimeException;
  */
 class Synchronizer
 {
+	const CHUNK_LIMIT = 500;
+	const SLEEP_TIME  = 0;
+
+
 	/**
 	 *
 	 */
@@ -90,6 +94,8 @@ class Synchronizer
 	 */
 	public function run(array $mappings = array(), $force_update = FALSE)
 	{
+		$start_time = time();
+
 		if (!count($mappings)) {
 			$mappings = array_keys($this->mappings);
 		}
@@ -103,6 +109,17 @@ class Synchronizer
 			}
 
 			$this->syncMapping($mapping, $force_update);
+		}
+
+		$run_time = time() - $start_time;
+
+		if ($run_time < 60) {
+			$this->log(sprintf('Syncing Completed in %s seconds', $run_time));
+		} else {
+			$this->log(sprintf(
+				'Syncing Completed in %s minutes',
+				number_format($run_time / 60, 2)
+			));
 		}
 	}
 
@@ -234,7 +251,7 @@ class Synchronizer
 	{
 		$updated_keys = array();
 
-		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
 			try {
 				$updated_keys = array_merge(
 					$updated_keys,
@@ -246,9 +263,20 @@ class Synchronizer
 			} catch (\Exception $e) {
 				echo $e->getMessage();
 			}
+
+			sleep(static::SLEEP_TIME);
 		}
 
 		return $updated_keys;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function log($message)
+	{
+		echo sprintf('[%s] %s', date('h:i:s'), $message) . PHP_EOL;
 	}
 
 
@@ -287,7 +315,7 @@ class Synchronizer
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 
-		echo sprintf('Syncing %s' . PHP_EOL, $name);
+		$this->log(sprintf('Syncing %s', $name));
 
 		if ($this->truncate[$mapping->getDestination()]) {
 			$this->syncMappingDeletes($mapping, array(), $destination_keys);
@@ -295,17 +323,17 @@ class Synchronizer
 
 		} else {
 			$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
-			echo 'Completed Deletions' . PHP_EOL;
+			$this->log('...completed deletions');
 
 			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
-			echo 'Completed Inserts' . PHP_EOL;
+			$this->log('...completed inserts');
 
 			if ($force_update) {
 				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys, TRUE);
 			} else {
 				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 			}
-			echo 'Completed Updates' . PHP_EOL;
+			$this->log('...completed updates');
 
 		}
 
@@ -327,10 +355,10 @@ class Synchronizer
 		if (!count($destination_keys)) {
 			return NULL;
 		} else {
-			echo 'Deleting ' . count($destination_keys) . ' Records'. PHP_EOL;
+			$this->log(sprintf('...deleting  %s records', count($destination_keys)));
 		}
 
-		foreach (array_chunk($destination_keys, 1000) as $destination_keys) {
+		foreach (array_chunk($destination_keys, static::CHUNK_LIMIT) as $destination_keys) {
 			$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
 
 			try {
@@ -351,19 +379,23 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$source_keys = array_udiff(
+		$diffed_keys = array_keys(array_udiff(
 			$this->filterKeys($mapping, $source_keys),
 			$destination_keys,
 			[$this, 'compare']
-		);
+		));
 
-		if (!count($source_keys)) {
+		if (!count($diffed_keys)) {
 			return NULL;
 		} else {
-			echo 'Inserting ' . count($source_keys) . ' Records'. PHP_EOL;
+			$this->log(sprintf('...inserting  %s records', count($diffed_keys)));
 		}
 
-		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+		$source_keys = array_filter($source_keys, function($key) use ($diffed_keys) {
+			return in_array($key, $diffed_keys);
+		}, ARRAY_FILTER_USE_KEY);
+
+		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
 			$insert_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
@@ -417,22 +449,27 @@ class Synchronizer
 			// and modifying them.
 			//
 
+			$this->log('...gathering updated records');
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
 		}
 
-		$source_keys = array_uintersect(
+		$diffed_keys = array_keys(array_uintersect(
 			$this->filterKeys($mapping, $source_keys),
 			$destination_keys,
 			[$this, 'compare']
-		);
+		));
 
-		if (!count($source_keys)) {
+		if (!count($diffed_keys)) {
 			return NULL;
 		} else {
-			echo 'Updating ' . count($source_keys) . ' Records'. PHP_EOL;
+			$this->log(sprintf('...updating  %s records', count($diffed_keys)));
 		}
 
-		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+		$source_keys = array_filter($source_keys, function($key) use ($diffed_keys) {
+			return in_array($key, $diffed_keys);
+		}, ARRAY_FILTER_USE_KEY);
+
+		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
 			$update_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
