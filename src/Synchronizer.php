@@ -110,6 +110,15 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected function compare($a, $b)
+	{
+		return $a != $b ? ($a > $b ? 1 : -1) : 0;
+	}
+
+
+	/**
+	 *
+	 */
 	protected function composeColumns($row)
 	{
 		return implode(', ', array_keys($row));
@@ -223,21 +232,23 @@ class Synchronizer
 	 */
 	protected function getUpdatedSourceKeys(Mapping $mapping, array $source_keys)
 	{
-		if (!$source_keys) {
-			return array();
-		}
+		$updated_keys = array();
 
 		foreach (array_chunk($source_keys, 1000) as $source_keys) {
 			try {
-				return $this->source
-					->query($mapping->composeSourceUpdatedKeysQuery($source_keys))
-					->fetchAll()
-				;
+				$updated_keys = array_merge(
+					$updated_keys,
+					$this->source
+						->query($mapping->composeSourceUpdatedKeysQuery($source_keys))
+						->fetchAll()
+				);
 
 			} catch (\Exception $e) {
 				echo $e->getMessage();
 			}
 		}
+
+		return $updated_keys;
 	}
 
 
@@ -284,13 +295,17 @@ class Synchronizer
 
 		} else {
 			$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
+			echo 'Completed Deletions' . PHP_EOL;
+
 			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
+			echo 'Completed Inserts' . PHP_EOL;
 
 			if ($force_update) {
-				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
+				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys, TRUE);
 			} else {
-				$this->syncMappingUpdates($mapping, $source_keys, array());
+				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 			}
+			echo 'Completed Updates' . PHP_EOL;
 
 		}
 
@@ -303,13 +318,16 @@ class Synchronizer
 	 */
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$filtered_source_keys = $this->filterKeys($mapping, $source_keys);
-		$destination_keys     = array_udiff($destination_keys, $filtered_source_keys, function($a, $b) {
-			return $a != $b ? ($a > $b ? 1 : -1) : 0;
-		});
+		$destination_keys = array_udiff(
+			$destination_keys,
+			$this->filterKeys($mapping, $source_keys),
+			[$this, 'compare']
+		);
 
 		if (!count($destination_keys)) {
 			return NULL;
+		} else {
+			echo 'Deleting ' . count($destination_keys) . ' Records'. PHP_EOL;
 		}
 
 		foreach (array_chunk($destination_keys, 1000) as $destination_keys) {
@@ -333,19 +351,20 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
-		$insert_results = array();
-
-		foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
-			if (in_array($key, $destination_keys)) {
-				unset($source_keys[$i]);
-			}
-		}
+		$source_keys = array_udiff(
+			$this->filterKeys($mapping, $source_keys),
+			$destination_keys,
+			[$this, 'compare']
+		);
 
 		if (!count($source_keys)) {
 			return NULL;
+		} else {
+			echo 'Inserting ' . count($source_keys) . ' Records'. PHP_EOL;
 		}
 
 		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+			$insert_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
 			try {
@@ -390,25 +409,31 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys)
+	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys, $force = FALSE)
 	{
-		$update_results = array();
+		if (!$force) {
+			//
+			// If we're not forcing updates, we get a lit of only updated keys before filtering
+			// and modifying them.
+			//
 
-		if (!$destination_keys) {
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
-		} else {
-			foreach ($this->filterKeys($mapping, $source_keys) as $i => $key) {
-				if (!in_array($key, $destination_keys)) {
-					unset($source_keys[$i]);
-				}
-			}
 		}
+
+		$source_keys = array_uintersect(
+			$this->filterKeys($mapping, $source_keys),
+			$destination_keys,
+			[$this, 'compare']
+		);
 
 		if (!count($source_keys)) {
 			return NULL;
+		} else {
+			echo 'Updating ' . count($source_keys) . ' Records'. PHP_EOL;
 		}
 
 		foreach (array_chunk($source_keys, 1000) as $source_keys) {
+			$update_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
 			try {
