@@ -445,7 +445,7 @@ class Synchronizer
 	{
 		if (!$force) {
 			//
-			// If we're not forcing updates, we get a lit of only updated keys before filtering
+			// If we're not forcing updates, we get a list of only updated keys before filtering
 			// and modifying them.
 			//
 
@@ -453,20 +453,20 @@ class Synchronizer
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
 		}
 
-		$diffed_keys = array_keys(array_udiff(
+		$intersect_keys = array_keys(array_uintersect(
 			$this->filterKeys($mapping, $source_keys),
 			$destination_keys,
 			[$this, 'compare']
 		));
 
-		if (!count($diffed_keys)) {
+		if (!count($intersect_keys)) {
 			return NULL;
 		} else {
-			$this->log(sprintf('...updating  %s records', count($diffed_keys)));
+			$this->log(sprintf('...updating  %s records', count($intersect_keys)));
 		}
 
-		$source_keys = array_filter($source_keys, function($key) use ($diffed_keys) {
-			return !in_array($key, $diffed_keys);
+		$source_keys = array_filter($source_keys, function($key) use ($intersect_keys) {
+			return in_array($key, $intersect_keys);
 		}, ARRAY_FILTER_USE_KEY);
 
 		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
