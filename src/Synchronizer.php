@@ -256,7 +256,7 @@ class Synchronizer
 				$updated_keys = array_merge(
 					$updated_keys,
 					$this->source
-						->query($mapping->composeSourceUpdatedKeysQuery($source_keys))
+						->query($mapping->composeSourceUpdatedKeysQuery($source_keys), PDO::FETCH_ASSOC)
 						->fetchAll()
 				);
 
@@ -304,7 +304,7 @@ class Synchronizer
 		// TODO: Get last synchronizer run on this mapping and set last_synced, for now fake:
 		//
 
-		$mapping->addParam('lastSynced', date('Y-m-d'));
+		$mapping->addParam('lastSynced', date('Y-m-d H:i:s', strtotime('-1 week')));
 
 		//
 
@@ -451,6 +451,7 @@ class Synchronizer
 
 			$this->log('...gathering updated records');
 			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
+
 		}
 
 		$intersect_keys = array_keys(array_uintersect(
