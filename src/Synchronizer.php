@@ -517,6 +517,7 @@ class Synchronizer
 
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
+		$start_sync_time  = date('Y-m-d H:i:s');
 
 		$this->log(sprintf('Syncing %s', $name));
 
@@ -539,7 +540,12 @@ class Synchronizer
 			$this->log('...completed updates');
 		}
 
-		$this->updateSet($name, date('Y-m-d H:i:s'));
+		//
+		// We use the start sync time, but set it after its completed in order to catch anything
+		// that might be updated while the sync is taking place (in the next one)
+		//
+
+		$this->updateSet($name, $start_sync_time);
 
 		$this->synced[array_pop($this->stack)] = TRUE;
 	}
