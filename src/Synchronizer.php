@@ -4,6 +4,7 @@ namespace Devour;
 
 use PDO;
 use DateTime;
+use PDOException;
 use RuntimeException;
 
 /**
@@ -42,6 +43,12 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected $stat = array();
+
+
+	/**
+	 *
+	 */
 	protected $synced = array();
 
 
@@ -64,6 +71,14 @@ class Synchronizer
 	{
 		$this->source      = $source;
 		$this->destination = $destination;
+
+		if (!$this->hasStatsTable()) {
+			$this->createStatsTable();
+		}
+
+		if (!$this->hasUpdatesTable()) {
+			$this->createUpdatesTable();
+		}
 	}
 
 
@@ -92,37 +107,186 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function run(array $mappings = array(), $force_update = FALSE)
+	public function createStatsTable()
 	{
-		$start_time = time();
+		$this->destination->query("
+			CREATE TABLE devour_stats(
+				start_time TIMESTAMP PRIMARY KEY,
+				end_time TIMESTAMP,
+				log TEXT
+			);
+		");
+	}
 
-		if (!count($mappings)) {
-			$mappings = array_keys($this->mappings);
-		}
 
-		foreach ($mappings as $mapping) {
-			if (!isset($this->mappings[$mapping])) {
-				throw new RuntimeException(sprintf(
-					'Cannot sync mapping "%s", no such mapping defined.',
-					$mapping
-				));
+	/**
+	 *
+	 */
+	public function createUpdatesTable()
+	{
+		$this->destination->query("
+			CREATE TABLE devour_updates(
+				target VARCHAR(255) PRIMARY KEY,
+				time TIMESTAMP
+			);
+		");
+	}
+
+
+	/**
+	 *
+	 */
+	public function run(array $mappings = array(), $force_update = FALSE): array
+	{
+		$this->stat();
+
+		if (!$this->statGet('new')) {
+			throw new RuntimeException(
+				sprintf(
+					'Syncing is already running, started at %s.',
+					$this->stat('start_time')
+				)
+			);
+
+		} else {
+			$this->statSet('start_time', date('Y-m-d H:i:s'));
+
+			if (function_exists('pcntl_signal')) {
+				declare(ticks=1);
+
+				$killer = function () {
+					$this->statSet('end_time', date('Y-m-d H:i:s'));
+					exit();
+				};
+
+				pcntl_signal(SIGINT,  $killer);
+				pcntl_signal(SIGTERM, $killer);
 			}
 
-			$this->syncMapping($mapping, $force_update);
+			if (!count($mappings)) {
+				$mappings = array_keys($this->mappings);
+			}
+
+			foreach ($mappings as $mapping) {
+				if (!isset($this->mappings[$mapping])) {
+					throw new RuntimeException(sprintf(
+						'Cannot sync mapping "%s", no such mapping defined.',
+						$mapping
+					));
+				}
+
+				$this->syncMapping($mapping, $force_update);
+			}
+
+			$this->statSet('end_time', date('Y-m-d H:i:s'));
 		}
 
-		$run_time = time() - $start_time;
 
-		if ($run_time < 60) {
-			$this->log(sprintf('Syncing Completed in %s seconds', $run_time));
+		return $this->stat;
+	}
+
+
+	/**
+	 *
+	 */
+	public function stat(): void
+	{
+		$result = $this->destination
+			->query("SELECT * FROM devour_stats ORDER BY start_time DESC LIMIT 1")
+			->fetch(PDO::FETCH_ASSOC)
+		;
+
+		if ($result && !$result['end_time']) {
+			$this->stat = $result;
 		} else {
-			$this->log(sprintf(
-				'Syncing Completed in %s minutes',
-				number_format($run_time / 60, 2)
-			));
+			$this->stat = [
+				'new'        => TRUE,
+				'start_time' => NULL,
+				'end_time'   => NULL,
+				'log'        => NULL
+			];
 		}
 	}
 
+
+	/**
+	 *
+	 */
+	public function statGet(string $column): ?string
+	{
+		if (!array_key_exists($column, $this->stat)) {
+			return NULL;
+		}
+
+		return $this->stat[$column];
+	}
+
+
+	/**
+	 *
+	 */
+	public function statSet(string $column, string $value): void
+	{
+		$this->stat[$column] = $value;
+
+		if (array_key_exists('new', $this->stat)) {
+			unset($this->stat['new']);
+
+			$insert_statement  = $this->destination->prepare(
+				"INSERT INTO devour_stats VALUES(:start_time, :end_time, :log)"
+			);
+
+			$insert_statement->execute($this->stat);
+		} else {
+			$update_statement = $this->destination->prepare(
+				"UPDATE devour_stats SET end_time = :end_time, log = :log WHERE start_time = :start_time"
+			);
+
+			$update_statement->execute($this->stat);
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	public function updateGet(string $table): string
+	{
+		$time   = '1800-01-01 00:00:00';
+		$result = $this->destination
+			->query(sprintf(
+				"SELECT * FROM devour_updates WHERE target = '%s' LIMIT 1",
+				$table
+			))
+			->fetch(PDO::FETCH_ASSOC)
+		;
+
+		if ($result) {
+			$time = $result['time'];
+
+		} else {
+			$this->destination->query(sprintf(
+				"INSERT INTO devour_updates (target, time) VALUES('%s', '%s')",
+				$table,
+				$time
+			));
+		}
+
+		return $time;
+	}
+
+
+	/**
+	 *
+	 */
+	public function updateSet(string $table, string $time): void
+	{
+		$this->destination->query(sprintf(
+			"UPDATE devour_updates SET TIME = '%s' WHERE target ='%s'",
+			date("Y-m-d H:i:s"),
+			$table
+		));
+	}
 
 	/**
 	 *
@@ -222,7 +386,7 @@ class Synchronizer
 			;
 
 		} catch (\Exception $e) {
-			echo $e->getMessage();
+			$this->log($e->getMessage());
 		}
 	}
 
@@ -239,7 +403,7 @@ class Synchronizer
 			;
 
 		} catch (\Exception $e) {
-			echo $e->getMessage();
+			$this->log($e->getMessage());
 		}
 	}
 
@@ -261,7 +425,7 @@ class Synchronizer
 				);
 
 			} catch (\Exception $e) {
-				echo $e->getMessage();
+				$this->log($e->getMessage());
 			}
 
 			sleep(static::SLEEP_TIME);
@@ -274,9 +438,52 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected function hasStatsTable()
+	{
+		try {
+			$this->destination->query("SELECT 1 FROM devour_stats");
+
+			return TRUE;
+
+		} catch (PDOException $e) {
+			if (strpos($e->getMessage(), 'exist') === FALSE) {
+				throw $e;
+			}
+
+			return FALSE;
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	protected function hasUpdatesTable()
+	{
+		try {
+			$this->destination->query("SELECT 1 FROM devour_updates");
+
+			return TRUE;
+
+		} catch (PDOException $e) {
+			if (strpos($e->getMessage(), 'exist') === FALSE) {
+				throw $e;
+			}
+
+			return FALSE;
+		}
+	}
+
+
+	/**
+	 *
+	 */
 	protected function log($message)
 	{
-		echo sprintf('[%s] %s', date('h:i:s'), $message) . PHP_EOL;
+		$line = sprintf('[%s] %s', date('h:i:s'), $message . PHP_EOL);
+
+		echo $line;
+		$this->statSet('log', $this->statGet('log') . $line);
 	}
 
 
@@ -301,16 +508,12 @@ class Synchronizer
 		array_push($this->stack, $name);
 
 		//
-		// TODO: Get last synchronizer run on this mapping and set last_synced, for now fake:
-		//
-
-		$mapping->addParam('lastSynced', date('Y-m-d H:i:s', strtotime('-1 week')));
-
-		//
 
 		foreach ($mapping->getDependencies() as $dependency) {
 			$this->syncMapping($dependency, $force_update);
 		}
+
+		$mapping->addParam('lastSynced', $this->updateGet($name));
 
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
@@ -334,8 +537,9 @@ class Synchronizer
 				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
 			}
 			$this->log('...completed updates');
-
 		}
+
+		$this->updateSet($name, date('Y-m-d H:i:s'));
 
 		$this->synced[array_pop($this->stack)] = TRUE;
 	}
@@ -364,11 +568,11 @@ class Synchronizer
 			try {
 				$delete_results = $this->destination->query($destination_delete_query);
 			} catch (\Exception $e) {
-				echo sprintf(
+				$this->log(sprintf(
 					"Failed removing destination records with query: %s  The database returned: %s",
 					$destination_delete_query,
 					$e->getMessage()
-				);
+				));
 			}
 		}
 	}
@@ -402,11 +606,11 @@ class Synchronizer
 			try {
 				$insert_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
 			} catch (\Exception $e) {
-				echo sprintf(
+				$this->log(sprintf(
 					"Failed selecting insert results with query: %s  The database returned: %s",
 					$source_select_query,
 					$e->getMessage()
-				);
+				));
 			}
 
 			foreach ($insert_results as $i => $row) {
@@ -426,12 +630,12 @@ class Synchronizer
 				try {
 					$insert_statement->execute();
 				} catch (\Exception $e) {
-					echo sprintf(
+					$this->log(sprintf(
 						'Failed inserting into %s with the following: %s  The database returned: %s',
 						ucwords(str_replace('_', ' ', $mapping->getDestination())),
 						json_encode($this->filter($mapping, $row)),
 						$e->getMessage()
-					);
+					));
 				}
 			}
 		}
@@ -477,11 +681,11 @@ class Synchronizer
 			try {
 				$update_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
 			} catch (\Exception $e) {
-				echo sprintf(
+				$this->log(sprintf(
 					"Failed selecting update results with query: %s  The database returned: %s",
 					$source_select_query,
 					$e->getMessage()
-				);
+				));
 			}
 
 			foreach ($update_results as $i => $row) {
@@ -510,12 +714,12 @@ class Synchronizer
 					$update_statement->execute();
 
 				} catch (\Exception $e) {
-					echo sprintf(
+					$this->log(sprintf(
 						'Failed updating %s with the following: %s  The database returned: %s',
 						ucwords(str_replace('_', ' ', $mapping->getDestination())),
 						json_encode($this->filter($mapping, $row)),
 						$e->getMessage()
-					);
+					));
 				}
 			}
 		}
