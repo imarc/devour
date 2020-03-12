@@ -12,7 +12,7 @@ use RuntimeException;
  */
 class Synchronizer
 {
-	const CHUNK_LIMIT = 500;
+	const CHUNK_LIMIT = 5000;
 	const SLEEP_TIME  = 0;
 
 
