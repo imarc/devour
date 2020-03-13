@@ -136,6 +136,49 @@ class Synchronizer
 	/**
 	 *
 	 */
+	public function getLastSyncTime(): ?string
+	{
+		$result = $this->destination->query("
+			SELECT
+				start_time
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NOT NULL
+			ORDER BY
+				start_time DESC
+			LIMIT
+				1
+		");
+
+		return $result->fetch(PDO::FETCH_ASSOC)['start_time'] ?? NULL;
+	}
+
+
+	/**
+	 *
+	 */
+	public function isRunning(): bool
+	{
+		$result = $this->destination->query("
+			SELECT
+				COUNT(*) as running
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			LIMIT
+				1
+		");
+
+		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'] ?? FALSE;
+	}
+
+
+
+	/**
+	 *
+	 */
 	public function run(array $mappings = array(), $force_update = FALSE): array
 	{
 		$this->stat();
