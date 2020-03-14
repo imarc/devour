@@ -136,6 +136,49 @@ class Synchronizer
 	/**
 	 *
 	 */
+	public function getHighSyncInterval(): ?int
+	{
+		$result = $this->destination->query("
+			SELECT
+				MAX(end_time - start_time) as interval
+			FROM
+				devour_stats
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['interval']) - strtotime('00:00:00');
+	}
+
+
+	/**
+	 *
+	 */
+	public function getCompletionTime(): ?int
+	{
+		$result = $this->destination->query("
+			SELECT
+				start_time
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			LIMIT 1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']) + $this->getHighSyncInterval();
+	}
+
+
+	/**
+	 *
+	 */
 	public function getLastSyncTime(): ?string
 	{
 		$result = $this->destination->query("
@@ -151,7 +194,11 @@ class Synchronizer
 				1
 		");
 
-		return $result->fetch(PDO::FETCH_ASSOC)['start_time'] ?? NULL;
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']);
 	}
 
 
@@ -171,7 +218,11 @@ class Synchronizer
 				1
 		");
 
-		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'] ?? FALSE;
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'];
 	}
 
 
