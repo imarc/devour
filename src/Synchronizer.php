@@ -238,7 +238,7 @@ class Synchronizer
 			throw new RuntimeException(
 				sprintf(
 					'Syncing is already running, started at %s.',
-					$this->stat('start_time')
+					$this->statGet('start_time')
 				)
 			);
 
@@ -292,6 +292,7 @@ class Synchronizer
 
 		if ($result && !$result['end_time']) {
 			$this->stat = $result;
+
 		} else {
 			$this->stat = [
 				'new'        => TRUE,
@@ -331,6 +332,7 @@ class Synchronizer
 			);
 
 			$insert_statement->execute($this->stat);
+
 		} else {
 			$update_statement = $this->destination->prepare(
 				"UPDATE devour_stats SET end_time = :end_time, log = :log WHERE start_time = :start_time"
