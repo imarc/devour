@@ -61,16 +61,23 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected $strictTime = NULL;
+
+
+	/**
+	 *
+	 */
 	protected $truncate = array();
 
 
 	/**
 	 *
 	 */
-	public function __construct(PDO $source, PDO $destination)
+	public function __construct(PDO $source, PDO $destination, $strict_time = FALSE)
 	{
 		$this->source      = $source;
 		$this->destination = $destination;
+		$this->strictTime  = $strict_time;
 
 		if (!$this->hasStatsTable()) {
 			$this->createStatsTable();
@@ -609,7 +616,11 @@ class Synchronizer
 			$this->syncMapping($dependency, $force_update);
 		}
 
-		$mapping->addParam('lastSynced', $this->updateGet($name));
+		if ($this->strictTime) {
+			$mapping->addParam('lastSynced', $this->updateGet($name));
+		} else {
+			$mapping->addParam('lastSynced', date('Y-m-d', strtotime($this->updateGet($name))));
+		}
 
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
