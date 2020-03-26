@@ -622,6 +622,8 @@ class Synchronizer
 			$mapping->addParam('lastSynced', date('Y-m-d', strtotime($this->updateGet($name))));
 		}
 
+		$mapping->addParam('today', date('Y-m-d'));
+
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 		$start_sync_time  = date('Y-m-d H:i:s');
