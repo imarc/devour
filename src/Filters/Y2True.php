@@ -12,6 +12,6 @@ class Y2True
 	 */
 	public function __invoke($value, array $context = array())
 	{
-		return strtolower($value) == 'y';
+		return strtolower($value[1] ?? NULL) == 'y';
 	}
 }
