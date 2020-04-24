@@ -12,6 +12,6 @@ class N2True
 	 */
 	public function __invoke($value, array $context = array())
 	{
-		return strtolower($value[1] ?? NULL) == 'n';
+		return strtolower($value[0] ?? NULL) == 'n';
 	}
 }
