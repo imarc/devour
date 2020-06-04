@@ -253,6 +253,7 @@ class Synchronizer
 			$this->statSet('start_time', date('Y-m-d H:i:s'));
 
 			if (function_exists('pcntl_signal')) {
+
 				declare(ticks=1);
 
 				$killer = function () {
@@ -276,7 +277,12 @@ class Synchronizer
 					));
 				}
 
-				$this->syncMapping($mapping, $force_update);
+				try {
+					$this->syncMapping($mapping, $force_update);
+
+				} catch (\Exception $e) {
+					$this->log($e->getMessage());
+				}
 			}
 
 			$this->statSet('end_time', date('Y-m-d H:i:s'));
