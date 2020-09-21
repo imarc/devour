@@ -630,11 +630,19 @@ class Synchronizer
 
 		$mapping->addParam('today', date('Y-m-d'));
 
+		$this->log(sprintf('Syncing %s', $name));
+
 		$source_keys      = $this->getExistingSourceKeys($mapping);
 		$destination_keys = $this->getExistingDestinationKeys($mapping);
 		$start_sync_time  = date('Y-m-d H:i:s');
 
-		$this->log(sprintf('Syncing %s', $name));
+		if (is_null($source_keys)) {
+			throw new RuntimeException('Failed to acquire source keys, cannot continue.');
+		}
+
+		if (is_null($destination_keys)) {
+			throw new RuntimeException('Failed to acquire destination keys, cannot continue.');
+		}
 
 		if ($this->truncate[$mapping->getDestination()]) {
 			$this->syncMappingDeletes($mapping, array(), $destination_keys);
