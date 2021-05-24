@@ -270,13 +270,6 @@ class Synchronizer
 			}
 
 			foreach ($mappings as $mapping) {
-				if (!isset($this->mappings[$mapping])) {
-					throw new RuntimeException(sprintf(
-						'Cannot sync mapping "%s", no such mapping defined.',
-						$mapping
-					));
-				}
-
 				try {
 					$this->syncMapping($mapping, $force_update);
 
@@ -601,6 +594,13 @@ class Synchronizer
 	 */
 	protected function syncMapping($name, $force_update)
 	{
+		if (!isset($this->mappings[$name])) {
+			throw new RuntimeException(sprintf(
+				'Cannot sync mapping "%s", no such mapping defined.',
+				$name
+			));
+		}
+
 		$mapping = $this->mappings[$name];
 
 		if ($this->synced[$name]) {
