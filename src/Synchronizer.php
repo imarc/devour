@@ -542,17 +542,16 @@ class Synchronizer
 	 */
 	protected function hasStatsTable()
 	{
+		$this->destination->query("SELECT 1");
+
 		try {
 			$this->destination->query("SELECT 1 FROM devour_stats");
 
 			return TRUE;
 
 		} catch (PDOException $e) {
-			if (strpos($e->getMessage(), 'exist') === FALSE) {
-				throw $e;
-			}
-
 			return FALSE;
+
 		}
 	}
 
@@ -562,17 +561,16 @@ class Synchronizer
 	 */
 	protected function hasUpdatesTable()
 	{
+		$this->destination->query("SELECT 1");
+
 		try {
 			$this->destination->query("SELECT 1 FROM devour_updates");
 
 			return TRUE;
 
 		} catch (PDOException $e) {
-			if (strpos($e->getMessage(), 'exist') === FALSE) {
-				throw $e;
-			}
-
 			return FALSE;
+
 		}
 	}
 
