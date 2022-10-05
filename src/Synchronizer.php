@@ -12,8 +12,12 @@ use RuntimeException;
  */
 class Synchronizer
 {
-	const CHUNK_LIMIT = 5000;
 	const SLEEP_TIME  = 0;
+
+	/**
+	 *
+	 */
+	protected $chunkLimit = NULL;
 
 
 	/**
@@ -73,11 +77,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function __construct(PDO $source, PDO $destination, $strict_time = FALSE)
+	public function __construct(PDO $source, PDO $destination, $strict_time = FALSE, $chunk_limit = 5000)
 	{
 		$this->source      = $source;
 		$this->destination = $destination;
 		$this->strictTime  = $strict_time;
+		$this->chunkLimit  = $chunk_limit;
 
 		if (!$this->hasStatsTable()) {
 			$this->createStatsTable();
@@ -517,7 +522,7 @@ class Synchronizer
 	{
 		$updated_keys = array();
 
-		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
+		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
 			try {
 				$updated_keys = array_merge(
 					$updated_keys,
@@ -689,7 +694,7 @@ class Synchronizer
 			$this->log(sprintf('...deleting  %s records', count($destination_keys)));
 		}
 
-		foreach (array_chunk($destination_keys, static::CHUNK_LIMIT) as $destination_keys) {
+		foreach (array_chunk($destination_keys, $this->chunkLimit) as $destination_keys) {
 			$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
 
 			try {
@@ -726,7 +731,7 @@ class Synchronizer
 			return in_array($key, $diffed_keys);
 		}, ARRAY_FILTER_USE_KEY);
 
-		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
+		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
 			$insert_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
@@ -801,7 +806,7 @@ class Synchronizer
 			return in_array($key, $intersect_keys);
 		}, ARRAY_FILTER_USE_KEY);
 
-		foreach (array_chunk($source_keys, static::CHUNK_LIMIT) as $source_keys) {
+		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
 			$update_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
 
