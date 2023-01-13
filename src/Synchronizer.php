@@ -125,6 +125,7 @@ class Synchronizer
 			CREATE TABLE devour_stats(
 				start_time TIMESTAMP PRIMARY KEY,
 				end_time TIMESTAMP,
+				force BOOLEAN,
 				log TEXT
 			);
 		");
@@ -256,6 +257,7 @@ class Synchronizer
 
 		} else {
 			$this->statSet('start_time', date('Y-m-d H:i:s'));
+			$this->statSet('force', $force_update ? 1 : 0);
 
 			if (function_exists('pcntl_signal')) {
 
@@ -309,7 +311,8 @@ class Synchronizer
 				'new'        => TRUE,
 				'start_time' => NULL,
 				'end_time'   => NULL,
-				'log'        => NULL
+				'log'        => NULL,
+				'force'      => 0
 			];
 		}
 	}
@@ -339,14 +342,14 @@ class Synchronizer
 			unset($this->stat['new']);
 
 			$insert_statement  = $this->destination->prepare(
-				"INSERT INTO devour_stats VALUES(:start_time, :end_time, :log)"
+				"INSERT INTO devour_stats VALUES(:start_time, :end_time, :log, :force)"
 			);
 
 			$insert_statement->execute($this->stat);
 
 		} else {
 			$update_statement = $this->destination->prepare(
-				"UPDATE devour_stats SET end_time = :end_time, log = :log WHERE start_time = :start_time"
+				"UPDATE devour_stats SET end_time = :end_time, log = :log, force = :force WHERE start_time = :start_time"
 			);
 
 			$update_statement->execute($this->stat);
