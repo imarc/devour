@@ -440,7 +440,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function filter(Mapping $mapping, array $row)
+	protected function filter(Mapping $mapping, array $row, $operation)
 	{
 		$data = array();
 
@@ -456,7 +456,7 @@ class Synchronizer
 					));
 				}
 
-				$data[$column] = $this->filters[$filter]($data[$column], $row);
+				$data[$column] = $this->filters[$filter]($data[$column], $row, $operation);
 			}
 
 			if ($data[$column] instanceof DateTime) {
@@ -471,10 +471,15 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function filterKeys(Mapping $mapping, array $keys)
+	protected function filterKeys(Mapping $mapping, array $keys, $operation)
 	{
 		foreach ($keys as $i => $key) {
-			$keys[$i] = $this->filter($mapping, $key);
+			try {
+				$keys[$i] = $this->filter($mapping, $key, $operation);
+
+			} catch (SkipException $e) {
+				unset($keys[$i]);
+			}
 		}
 
 		return $keys;
@@ -652,8 +657,10 @@ class Synchronizer
 			$this->syncMappingInserts($mapping, $source_keys, array());
 
 		} else {
-			$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
-			$this->log('...completed deletions');
+			if ($mapping->canDelete()) {
+				$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
+				$this->log('...completed deletions');
+			}
 
 			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
 			$this->log('...completed inserts');
@@ -682,9 +689,13 @@ class Synchronizer
 	 */
 	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
+		if (!$mapping->canDelete()) {
+			return;
+		}
+
 		$destination_keys = array_udiff(
 			$destination_keys,
-			$this->filterKeys($mapping, $source_keys),
+			$this->filterKeys($mapping, $source_keys, 'DELETE'),
 			[$this, 'compare']
 		);
 
@@ -715,8 +726,12 @@ class Synchronizer
 	 */
 	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
 	{
+		if (!$mapping->canInsert()) {
+			return;
+		}
+
 		$diffed_keys = array_keys(array_udiff(
-			$this->filterKeys($mapping, $source_keys),
+			$this->filterKeys($mapping, $source_keys, 'INSERT'),
 			$destination_keys,
 			[$this, 'compare']
 		));
@@ -755,7 +770,7 @@ class Synchronizer
 					));
 				}
 
-				foreach ($this->filter($mapping, $row) as $column => $value) {
+				foreach ($this->filter($mapping, $row, 'INSERT') as $column => $value) {
 					$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
 				}
 
@@ -765,7 +780,7 @@ class Synchronizer
 					$this->log(sprintf(
 						'Failed inserting into %s with the following: %s  The database returned: %s',
 						ucwords(str_replace('_', ' ', $mapping->getDestination())),
-						json_encode($this->filter($mapping, $row)),
+						json_encode($this->filter($mapping, $row, 'INSERT')),
 						$e->getMessage()
 					));
 				}
@@ -779,6 +794,10 @@ class Synchronizer
 	 */
 	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys, $force = FALSE)
 	{
+		if (!$mapping->canUpdate()) {
+			return;
+		}
+
 		if (!$force) {
 			//
 			// If we're not forcing updates, we get a list of only updated keys before filtering
@@ -791,7 +810,7 @@ class Synchronizer
 		}
 
 		$intersect_keys = array_keys(array_uintersect(
-			$this->filterKeys($mapping, $source_keys),
+			$this->filterKeys($mapping, $source_keys, 'UPDATE'),
 			$destination_keys,
 			[$this, 'compare']
 		));
@@ -832,7 +851,7 @@ class Synchronizer
 					));
 				}
 
-				foreach ($this->filter($mapping, $row) as $column => $value) {
+				foreach ($this->filter($mapping, $row, 'UPDATE') as $column => $value) {
 					$index = array_search($column, $mapping->getKey());
 
 					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
@@ -849,7 +868,7 @@ class Synchronizer
 					$this->log(sprintf(
 						'Failed updating %s with the following: %s  The database returned: %s',
 						ucwords(str_replace('_', ' ', $mapping->getDestination())),
-						json_encode($this->filter($mapping, $row)),
+						json_encode($this->filter($mapping, $row, 'UPDATE')),
 						$e->getMessage()
 					));
 				}
