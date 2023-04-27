@@ -35,6 +35,12 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected $generators = array();
+
+
+	/**
+	 *
+	 */
 	protected $source = NULL;
 
 
@@ -113,6 +119,16 @@ class Synchronizer
 	public function addFilter($name, callable $filter)
 	{
 		$this->filters[$name] = $filter;
+	}
+
+
+
+	/**
+	 *
+	 */
+	public function addGenerator($name, callable $generator)
+	{
+		$this->generators[$name] = $generator;
 	}
 
 
@@ -474,15 +490,26 @@ class Synchronizer
 	protected function filterKeys(Mapping $mapping, array $keys, $operation)
 	{
 		foreach ($keys as $i => $key) {
-			try {
-				$keys[$i] = $this->filter($mapping, $key, $operation);
-
-			} catch (SkipException $e) {
-				unset($keys[$i]);
-			}
+			$keys[$i] = $this->filter($mapping, $key, $operation);
 		}
 
 		return $keys;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function generate($alias, array $row)
+	{
+		if (isset($this->generators[$alias])) {
+			return $this->generators[$alias]($row);
+		}
+
+		throw new RuntimeException(sprintf(
+			'Cannot generate type "%s", generator not registered.',
+			$alias
+		));
 	}
 
 
@@ -746,6 +773,8 @@ class Synchronizer
 			return in_array($key, $diffed_keys);
 		}, ARRAY_FILTER_USE_KEY);
 
+		$generated = array_keys($mapping->getGenerators());
+
 		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
 			$insert_results      = array();
 			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
@@ -762,15 +791,21 @@ class Synchronizer
 
 			foreach ($insert_results as $i => $row) {
 				if (!$i) {
+					$full_row = $row + array_flip($generated);
 					$insert_statement = $this->destination->prepare(sprintf(
 						'INSERT INTO %s (%s) VALUES(%s)',
 						$mapping->getDestination(),
-						$this->composeColumns($row),
-						$this->composeParams($row)
+						$this->composeColumns($full_row),
+						$this->composeParams($full_row)
 					));
 				}
 
 				foreach ($this->filter($mapping, $row, 'INSERT') as $column => $value) {
+					$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+				}
+
+				foreach ($mapping->getGenerators() as $column => $generator) {
+					$value = $this->generate($generator, $row);
 					$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
 				}
 
@@ -784,7 +819,7 @@ class Synchronizer
 						$e->getMessage()
 					));
 				}
-			}
+		}
 		}
 	}
 
