@@ -34,6 +34,12 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $generators = array();
+
+
+	/**
+	 *
+	 */
 	protected $immutable = FALSE;
 
 
@@ -330,6 +336,15 @@ class Mapping
 	/**
 	 *
 	 */
+	public function getGenerators()
+	{
+		return $this->generators;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getDependencies()
 	{
 		return $this->dependencies;
@@ -351,6 +366,17 @@ class Mapping
 	public function isPersistent()
 	{
 		return $this->persistent;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setGenerator($alias, $generator)
+	{
+		$this->generators[$alias] = $generator;
+
+		return $this;
 	}
 
 
