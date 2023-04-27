@@ -34,6 +34,18 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $generators = array();
+
+
+	/**
+	 *
+	 */
+	protected $immutable = FALSE;
+
+
+	/**
+	 *
+	 */
 	protected $joins = array();
 
 
@@ -47,6 +59,12 @@ class Mapping
 	 *
 	 */
 	protected $params = array();
+
+
+	/**
+	 *
+	 */
+	protected $persistent = FALSE;
 
 
 	/**
@@ -162,6 +180,33 @@ class Mapping
 		$this->wheres[] = $condition;
 
 		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function canInsert()
+	{
+		return TRUE;
+	}
+
+
+	/**
+	 *
+	 */
+	public function canUpdate()
+	{
+		return !$this->isImmutable();
+	}
+
+
+	/**
+	 *
+	 */
+	public function canDelete()
+	{
+		return !$this->isImmutable() && !$this->isPersistent();
 	}
 
 
@@ -291,9 +336,67 @@ class Mapping
 	/**
 	 *
 	 */
+	public function getGenerators()
+	{
+		return $this->generators;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getDependencies()
 	{
 		return $this->dependencies;
+	}
+
+
+	/**
+	 *
+	 */
+	public function isImmutable()
+	{
+		return $this->immutable;
+	}
+
+
+	/**
+	 *
+	 */
+	public function isPersistent()
+	{
+		return $this->persistent;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setGenerator($alias, $generator)
+	{
+		$this->generators[$alias] = $generator;
+
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setImmutable($value)
+	{
+		$this->immutable = $value;
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setPersistent($value)
+	{
+		$this->persistent = $value;
+		return $this;
 	}
 
 
