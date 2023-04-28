@@ -426,8 +426,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function composeColumns($row)
+	protected function composeColumns($mapping, $row)
 	{
+		foreach ($mapping->getContextFields() as $alias => $field) {
+			unset($row[$alias]);
+		}
+
 		return implode(', ', array_keys($row));
 	}
 
@@ -435,8 +439,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function composeParams($row)
+	protected function composeParams($mapping, $row)
 	{
+		foreach ($mapping->getContextFields() as $alias => $field) {
+			unset($row[$alias]);
+		}
+
 		return ':' . implode(', :', array_keys($row));
 	}
 
@@ -444,8 +452,12 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function composeSetParams($row)
+	protected function composeSetParams($mapping, $row)
 	{
+		foreach ($mapping->getContextFields() as $alias => $field) {
+			unset($row[$alias]);
+		}
+
 		$sets = array();
 
 		foreach (array_keys($row) as $column) {
@@ -695,12 +707,14 @@ class Synchronizer
 			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
 			$this->log('...completed inserts');
 
-			if ($force_update) {
-				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys, TRUE);
-			} else {
-				$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
+			if ($mapping->canUpdate()) {
+				if ($force_update) {
+					$this->syncMappingUpdates($mapping, $source_keys, $destination_keys, TRUE);
+				} else {
+					$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
+				}
+				$this->log('...completed updates');
 			}
-			$this->log('...completed updates');
 		}
 
 		//
@@ -798,12 +812,16 @@ class Synchronizer
 					$insert_statement = $this->destination->prepare(sprintf(
 						'INSERT INTO %s (%s) VALUES(%s)',
 						$mapping->getDestination(),
-						$this->composeColumns($full_row),
-						$this->composeParams($full_row)
+						$this->composeColumns($mapping, $full_row),
+						$this->composeParams($mapping, $full_row)
 					));
 				}
 
 				foreach ($this->filter($mapping, $row, 'INSERT') as $column => $value) {
+					if (in_array($column, array_keys($mapping->getContextFields()))) {
+						continue;
+					}
+
 					$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
 				}
 
@@ -882,7 +900,7 @@ class Synchronizer
 					$update_statement = $this->destination->prepare(sprintf(
 						'UPDATE %s SET %s WHERE %s',
 						$mapping->getDestination(),
-						$this->composeSetParams($row),
+						$this->composeSetParams($mapping, $row),
 						join(' AND ', array_map(function($field) {
 							return sprintf('%s = :__%s', $field, $field);
 						}, $mapping->getKey()))
@@ -890,6 +908,10 @@ class Synchronizer
 				}
 
 				foreach ($this->filter($mapping, $row, 'UPDATE') as $column => $value) {
+					if (in_array($column, array_keys($mapping->getContextFields()))) {
+						continue;
+					}
+
 					$index = array_search($column, $mapping->getKey());
 
 					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));

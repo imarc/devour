@@ -22,6 +22,12 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $contextFields = array();
+
+
+	/**
+	 *
+	 */
 	protected $fields = array();
 
 
@@ -104,6 +110,17 @@ class Mapping
 	public function addDependency($dependency)
 	{
 		$this->dependencies[] = $dependency;
+
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function addContext($alias, $target)
+	{
+		$this->contextFields[$alias] = $target;
 
 		return $this;
 	}
@@ -306,6 +323,15 @@ class Mapping
 	/**
 	 *
 	 */
+	public function getContextFields()
+	{
+		return $this->contextFields;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getDestination()
 	{
 		return $this->destination;
@@ -436,6 +462,10 @@ class Mapping
 		$fields = array();
 
 		foreach ($this->fields as $alias => $target) {
+			$fields[] = sprintf('%s as %s', $target, $alias);
+		}
+
+		foreach ($this->contextFields as $alias => $target) {
 			$fields[] = sprintf('%s as %s', $target, $alias);
 		}
 
