@@ -48,6 +48,12 @@ class Analyzer
 	protected $data = [];
 
 
+	/*
+	 *
+	 */
+	protected $tables = [];
+
+
 	/**
 	 *
 	 */
