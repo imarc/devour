@@ -188,12 +188,15 @@ class Analyzer
 				}
 			}
 
-			$result_data[] = $table;
-			$this->data[]        = [
-				'start_time' => new DateTime($result['start_time']),
-				'end_time'   => new DateTime($result['end_time']),
-				'log'        => $result_data
-			];
+			if (isset($table)) {
+				$result_data[] = $table;
+				$this->data[]        = [
+					'start_time' => new DateTime($result['start_time']),
+					'end_time'   => new DateTime($result['end_time']),
+					'log'        => $result_data
+				];
+
+			}
 		}
 
 		$this->tables = array_unique($this->tables);
