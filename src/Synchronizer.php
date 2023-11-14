@@ -81,6 +81,12 @@ class Synchronizer
 
 
 	/**
+	 * 
+	 */
+	protected $pruneStatsWhere = array();
+
+
+	/**
 	 *
 	 */
 	public function __construct(PDO $source, PDO $destination, $strict_time = FALSE, $chunk_limit = 5000)
@@ -204,6 +210,28 @@ class Synchronizer
 		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']) + $this->getHighSyncInterval();
 	}
 
+	/**
+	 * 
+	 */
+	public function getStartTime(): ?int
+	{
+		$result = $this->destination->query("
+			SELECT
+				start_time
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			LIMIT 1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']);
+	}
+
 
 	/**
 	 *
@@ -263,6 +291,7 @@ class Synchronizer
 	{
 		$this->stat();
 
+
 		if (!$this->statGet('new')) {
 			throw new RuntimeException(
 				sprintf(
@@ -272,6 +301,9 @@ class Synchronizer
 			);
 
 		} else {
+			if (!empty($this->pruneStatsWhere)) {
+				$this->pruneStats();
+			}
 			$this->statSet('start_time', date('Y-m-d H:i:s'));
 			$this->statSet('force', $force_update ? 1 : 0);
 
@@ -951,5 +983,28 @@ class Synchronizer
 		} else {
 			return PDO::PARAM_STR;
 		}
+	}
+
+
+	/**
+	 * 
+	 */
+	private function pruneStats()
+	{
+		$pruneCriteria = implode(' AND ', $this->pruneStatsWhere);
+
+		$this->destination->query("
+			DELETE FROM devour_stats
+			WHERE $pruneCriteria
+		");
+	}
+
+	
+	/**
+	 * 
+	 */
+	public function setPruneStatsWhere($pruneStatsWhere = [])
+	{
+		$this->pruneStatsWhere = $pruneStatsWhere;
 	}
 }
