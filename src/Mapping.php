@@ -344,7 +344,7 @@ class Mapping
 			$join_keys,
 			$this->getDestination(),
 			$this->key[0],
-			$force ? : ' AND devour_updated = TRUE'
+			$force ? '' : ' AND devour_updated = TRUE'
 		);
 
 		return $sql;
