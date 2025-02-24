@@ -174,10 +174,13 @@ class Synchronizer
 	public function createTemporaryTable($mapping)
 	{
 		$this->destination->query(sprintf("
-			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default false)
+			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default false %s)
 			",
 			$mapping->getDestination(),
-			$mapping->getDestination()
+			$mapping->getDestination(),
+			count($mapping->getContextFields()) ? ', ' . join(', ', array_map(function($alias) {
+				return $alias . ' varchar ';
+			}, array_keys($mapping->getContextFields()))) : ''
 		));
 	}
 
@@ -843,7 +846,7 @@ class Synchronizer
 
 		foreach ($insert_results as $i => $row) {
 			if (!$i) {
-				$full_row = $row + array_flip($generated);
+				$full_row = $row + $generated;
 				$insert_statement = $this->destination->prepare(sprintf(
 					'INSERT INTO %s (%s) VALUES(%s)',
 					$mapping->getDestination(),

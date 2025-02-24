@@ -531,11 +531,13 @@ class Mapping
 	/**
 	 * 
 	 */
-	protected function makeTemporaryFields()
+	protected function makeTemporaryFields($contextual = TRUE)
 	{
+		$fields = $contextual ? array_merge($this->fields, $this->contextFields) : $this->fields;
+
 		return join(', ', array_map(function($field) {
 			return sprintf("devour_temp_%s.%s", $this->getDestination(), $field);
-		}, array_keys($this->fields)));
+		}, array_keys($fields)));
 	}
 
 
