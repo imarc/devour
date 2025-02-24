@@ -245,25 +245,12 @@ class Mapping
 	/**
 	 *
 	 */
-	public function composeDestinationDeleteQuery(array $keys)
-	{
-		return $this->compose(
-			'DELETE FROM %s WHERE %s',
-			$this->destination,
-			$this->makeDestinationInKeys($keys)
-		);
-	}
-
-
-	/**
-	 *
-	 */
 	public function composeDestinationExistingKeysQuery()
 	{
 		$sql = $this->compose(
 			'SELECT %s FROM %s',
 			$this->makeDestinationKey(),
-			$this->destination
+			$this->getDestination()
 		);
 
 		return $sql;
@@ -287,16 +274,103 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	public function composeSourceInsertSelectQuery()
+	{
+		$keys = [];
+		foreach ($this->key as $key) {
+			$keys[] = sprintf('devour_temp_%s.%s = %s.%s', $this->getDestination(), $key, $this->getDestination(), $key);
+		}
+
+		$join_keys = join(' AND ', $keys);
+
+		$sql = $this->compose(
+			'SELECT %s from devour_temp_%s LEFT OUTER JOIN %s ON (%s) WHERE %s.%s IS NULL',
+			$this->makeTemporaryFields(),
+			$this->getDestination(),
+			$this->getDestination(),
+			$join_keys,
+			$this->getDestination(),
+			$this->key[0]
+		);
+
+		return $sql;
+	}
+
+	/**
+	 * 
+	 */
+	public function composeSourceDeleteSelectQuery()
+	{
+		$keys = [];
+		foreach ($this->getKey() as $key) {
+			$keys[] = sprintf('devour_temp_%s.%s = %s.%s', $this->getDestination(), $key, $this->getDestination(), $key);
+		}
+
+		$join_keys = join(' AND ', $keys);
+
+		$sql = $this->compose(
+			'SELECT %s.* from devour_temp_%s RIGHT OUTER JOIN %s ON (%s) WHERE devour_temp_%s.%s IS NULL',
+			$this->getDestination(),
+			$this->getDestination(),
+			$this->getDestination(),
+			$join_keys,
+			$this->getDestination(),
+			$this->key[0]
+		);
+
+		return $sql;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function composeSourceUpdateSelectQuery($force = FALSE)
+	{
+		$keys = [];
+		foreach ($this->key as $key) {
+			$keys[] = sprintf('devour_temp_%s.%s = %s.%s', $this->getDestination(), $key, $this->getDestination(), $key);
+		}
+
+		$join_keys = join(' AND ', $keys);
+
+		$sql = $this->compose(
+			'SELECT %s from devour_temp_%s inner JOIN %s ON (%s) WHERE %s.%s IS NOT NULL %s',
+			$this->makeTemporaryFields(),
+			$this->getDestination(),
+			$this->getDestination(),
+			$join_keys,
+			$this->getDestination(),
+			$this->key[0],
+			$force ? : ' AND devour_updated = TRUE'
+		);
+
+		return $sql;
+	}
+
+
+	/**
 	 *
 	 */
-	public function composeSourceSelectQuery($keys)
+	public function composeSourceSelectQuery($keys = NULL)
 	{
-		$sql = $this->compose(
-			'SELECT %s FROM %s WHERE %s AND %s',
+		$sql    = 'SELECT %s FROM %s WHERE %s';
+		$params = [
 			$this->makeSourceFields(),
 			$this->makeSourceFrom(),
-			$this->makeSourceWheres(),
-			$this->makeSourceInKeys($keys)
+			$this->makeSourceWheres()
+		];
+
+		if ($keys) {
+			$sql .= ' AND %s';
+			$params[] = $this->makeSourceInKeys($keys);
+		}
+		
+		$sql = $this->compose(
+			$sql,
+			...$params
 		);
 
 		return $sql;
@@ -455,9 +529,20 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	protected function makeTemporaryFields()
+	{
+		return join(', ', array_map(function($field) {
+			return sprintf("devour_temp_%s.%s", $this->getDestination(), $field);
+		}, array_keys($this->fields)));
+	}
+
+
+	/**
 	 *
 	 */
-	protected function makeSourceFields()
+	protected function makeSourceFields($temp = FALSE)
 	{
 		$fields = array();
 
@@ -467,6 +552,10 @@ class Mapping
 
 		foreach ($this->contextFields as $alias => $target) {
 			$fields[] = sprintf('%s as %s', $target, $alias);
+		}
+
+		if ($temp) {
+			$fields[] = sprintf('(CASE WHEN %s THEN 1 ELSE 0 END) as devour_updated', $this->makeSourceUpdateWheres());
 		}
 
 		return implode(', ', $fields);

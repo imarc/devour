@@ -169,6 +169,20 @@ class Synchronizer
 
 
 	/**
+	 * 
+	 */
+	public function createTemporaryTable($mapping)
+	{
+		$this->destination->query(sprintf("
+			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default false)
+			",
+			$mapping->getDestination(),
+			$mapping->getDestination()
+		));
+	}
+
+
+	/**
 	 *
 	 */
 	public function getHighSyncInterval(): ?int
@@ -714,37 +728,26 @@ class Synchronizer
 
 		$this->log(sprintf('Syncing %s', $name));
 
-		$source_keys      = $this->getExistingSourceKeys($mapping);
-		$destination_keys = $this->getExistingDestinationKeys($mapping);
+		$this->createTemporaryTable($mapping);
+		$this->syncMappingTemporary($mapping);
+
 		$start_sync_time  = date('Y-m-d H:i:s');
 
-		if (is_null($source_keys)) {
-			throw new RuntimeException('Failed to acquire source keys, cannot continue.');
-		}
-
-		if (is_null($destination_keys)) {
-			throw new RuntimeException('Failed to acquire destination keys, cannot continue.');
-		}
-
 		if ($this->truncate[$mapping->getDestination()]) {
-			$this->syncMappingDeletes($mapping, array(), $destination_keys);
-			$this->syncMappingInserts($mapping, $source_keys, array());
+			$this->truncateTable($mapping);
+			$this->syncMappingInserts($mapping);
 
 		} else {
 			if ($mapping->canDelete()) {
-				$this->syncMappingDeletes($mapping, $source_keys, $destination_keys);
+				$this->syncMappingDeletes($mapping);
 				$this->log('...completed deletions');
 			}
 
-			$this->syncMappingInserts($mapping, $source_keys, $destination_keys);
+			$this->syncMappingInserts($mapping);
 			$this->log('...completed inserts');
 
 			if ($mapping->canUpdate()) {
-				if ($force_update) {
-					$this->syncMappingUpdates($mapping, $source_keys, $destination_keys, TRUE);
-				} else {
-					$this->syncMappingUpdates($mapping, $source_keys, $destination_keys);
-				}
+				$this->syncMappingUpdates($mapping, $force_update);
 				$this->log('...completed updates');
 			}
 		}
@@ -763,29 +766,41 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingDeletes(Mapping $mapping, array $source_keys, array $destination_keys)
+	protected function syncMappingDeletes(Mapping $mapping)
 	{
 		if (!$mapping->canDelete()) {
 			return;
 		}
 
-		$destination_keys = array_udiff(
-			$destination_keys,
-			$this->filterKeys($mapping, $source_keys, 'DELETE'),
-			[$this, 'compare']
-		);
-
-		if (!count($destination_keys)) {
-			return NULL;
-		} else {
-			$this->log(sprintf('...deleting  %s records', count($destination_keys)));
+		try {
+			$delete_select_query = $mapping->composeSourceDeleteSelectQuery();
+			$delete_results      = $this->destination->query($delete_select_query)->fetchAll();
+		} catch (\Exception $e) {
+			$this->log(sprintf(
+				"Failed selecting delete results with query: %s  The database returned: %s",
+				$delete_select_query,
+				$e->getMessage()
+			));
 		}
 
-		foreach (array_chunk($destination_keys, $this->chunkLimit) as $destination_keys) {
-			$destination_delete_query = $mapping->composeDestinationDeleteQuery($destination_keys);
+		if (!count($delete_results)) {
+			return NULL;
+		} else {
+			$this->log(sprintf('...deleting  %s records', count($delete_results)));
+		}
 
+		foreach ($delete_results as $deletion) {
 			try {
-				$delete_results = $this->destination->query($destination_delete_query);
+				$key_wheres = [];
+				foreach ($mapping->getKey() as $key) {
+					$key_wheres[] = sprintf("%s = '%s'", $key,  $deletion[$key]);
+				}
+
+				$this->destination->query(sprintf(
+					'DELETE FROM %s WHERE %s',
+					$mapping->getDestination(),
+					join(' AND ', $key_wheres)
+				), PDO::FETCH_ASSOC);
 			} catch (\Exception $e) {
 				$this->log(sprintf(
 					"Failed removing destination records with query: %s  The database returned: %s",
@@ -800,49 +815,87 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingInserts(Mapping $mapping, array $source_keys, array $destination_keys)
+	protected function syncMappingInserts(Mapping $mapping)
 	{
 		if (!$mapping->canInsert()) {
 			return;
 		}
 
-		$diffed_keys = array_keys(array_udiff(
-			$this->filterKeys($mapping, $source_keys, 'INSERT'),
-			$destination_keys,
-			[$this, 'compare']
-		));
+		$insert_results = array();
+		$generated      = $mapping->getGenerators();
 
-		if (!count($diffed_keys)) {
-			return NULL;
-		} else {
-			$this->log(sprintf('...inserting  %s records', count($diffed_keys)));
+		try {
+			$source_select_query = $mapping->composeSourceInsertSelectQuery();
+			$insert_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
+		} catch (\Exception $e) {
+			$this->log(sprintf(
+				"Failed selecting insert results with query: %s  The database returned: %s",
+				$source_select_query,
+				$e->getMessage()
+			));
 		}
 
-		$source_keys = array_filter($source_keys, function($key) use ($diffed_keys) {
-			return in_array($key, $diffed_keys);
-		}, ARRAY_FILTER_USE_KEY);
+		if (!count($insert_results)) {
+			return NULL;
+		} else {
+			$this->log(sprintf('...inserting  %s records', count($insert_results)));
+		}
 
-		$generated = array_keys($mapping->getGenerators());
-
-		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
-			$insert_results      = array();
-			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
-
-			try {
-				$insert_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
-			} catch (\Exception $e) {
-				$this->log(sprintf(
-					"Failed selecting insert results with query: %s  The database returned: %s",
-					$source_select_query,
-					$e->getMessage()
+		foreach ($insert_results as $i => $row) {
+			if (!$i) {
+				$full_row = $row + array_flip($generated);
+				$insert_statement = $this->destination->prepare(sprintf(
+					'INSERT INTO %s (%s) VALUES(%s)',
+					$mapping->getDestination(),
+					$this->composeColumns($mapping, $full_row),
+					$this->composeParams($mapping, $full_row)
 				));
 			}
 
-			foreach ($insert_results as $i => $row) {
+			foreach ($this->filter($mapping, $row, 'INSERT') as $column => $value) {
+				if (in_array($column, array_keys($mapping->getContextFields()))) {
+					continue;
+				}
+
+				$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+			}
+
+			foreach ($mapping->getGenerators() as $column => $generator) {
+				$value = $this->generate($generator, $row);
+				$insert_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+			}
+
+			try {
+				$insert_statement->execute();
+			} catch (\Exception $e) {
+				$this->log(sprintf(
+					'Failed inserting into %s with the following: %s  The database returned: %s',
+					ucwords(str_replace('_', ' ', $mapping->getDestination())),
+					json_encode($this->filter($mapping, $row, 'INSERT')),
+					$e->getMessage()
+				));
+			}
+		}
+	}
+
+
+	/**
+	 *
+	 */
+	protected function syncMappingTemporary(Mapping $mapping)
+	{
+		$source_select_query = $mapping->composeSourceSelectQuery();
+		try {
+			$source_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
+			$generated      = array_keys($mapping->getGenerators());
+
+			$this->log(sprintf('...transfering %s temporary records', count($source_results)));
+
+			foreach ($source_results as $i => $row) {
 				if (!$i) {
 					$full_row = $row + array_flip($generated);
 					$insert_statement = $this->destination->prepare(sprintf(
-						'INSERT INTO %s (%s) VALUES(%s)',
+						'INSERT INTO devour_temp_%s (%s) VALUES(%s)',
 						$mapping->getDestination(),
 						$this->composeColumns($mapping, $full_row),
 						$this->composeParams($mapping, $full_row)
@@ -872,99 +925,99 @@ class Synchronizer
 						$e->getMessage()
 					));
 				}
-		}
+			}
+		} catch (\Exception $e) {
+			$this->log(sprintf(
+				"Failed selecting transfer results with query: %s  The database returned: %s",
+				$source_select_query,
+				$e->getMessage()
+			));
 		}
 	}
-
 
 	/**
 	 *
 	 */
-	protected function syncMappingUpdates(Mapping $mapping, array $source_keys, array $destination_keys, $force = FALSE)
+	protected function syncMappingUpdates(Mapping $mapping, $force = FALSE)
 	{
 		if (!$mapping->canUpdate()) {
 			return;
 		}
 
-		if (!$force) {
-			//
-			// If we're not forcing updates, we get a list of only updated keys before filtering
-			// and modifying them.
-			//
-
-			$this->log('...gathering updated records');
-			$source_keys = $this->getUpdatedSourceKeys($mapping, $source_keys);
-
+		try {
+			$source_select_query = $mapping->composeSourceUpdateSelectQuery($force);
+			$update_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
+		} catch (\Exception $e) {
+			$this->log(sprintf(
+				"Failed selecting update results with query: %s  The database returned: %s",
+				$source_select_query,
+				$e->getMessage()
+			));
 		}
 
-		$intersect_keys = array_keys(array_uintersect(
-			$this->filterKeys($mapping, $source_keys, 'UPDATE'),
-			$destination_keys,
-			[$this, 'compare']
-		));
+		if (!$force) {
+			$this->log('...gathering updated records');
+		}
 
-		if (!count($intersect_keys)) {
+		if (!count($update_results)) {
 			return NULL;
 		} else {
-			$this->log(sprintf('...updating  %s records', count($intersect_keys)));
+			$this->log(sprintf('...updating  %s records', count($update_results)));
 		}
-
-		$source_keys = array_filter($source_keys, function($key) use ($intersect_keys) {
-			return in_array($key, $intersect_keys);
-		}, ARRAY_FILTER_USE_KEY);
-
-		foreach (array_chunk($source_keys, $this->chunkLimit) as $source_keys) {
-			$update_results      = array();
-			$source_select_query = $mapping->composeSourceSelectQuery($source_keys);
-
-			try {
-				$update_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC);
-			} catch (\Exception $e) {
-				$this->log(sprintf(
-					"Failed selecting update results with query: %s  The database returned: %s",
-					$source_select_query,
-					$e->getMessage()
+		
+		foreach ($update_results as $i => $row) {
+			if (!$i) {
+				$update_statement = $this->destination->prepare(sprintf(
+					'UPDATE %s SET %s WHERE %s',
+					$mapping->getDestination(),
+					$this->composeSetParams($mapping, $row),
+					join(' AND ', array_map(function($field) {
+						return sprintf('%s = :__%s', $field, $field);
+					}, $mapping->getKey()))
 				));
 			}
 
-			foreach ($update_results as $i => $row) {
-				if (!$i) {
-					$update_statement = $this->destination->prepare(sprintf(
-						'UPDATE %s SET %s WHERE %s',
-						$mapping->getDestination(),
-						$this->composeSetParams($mapping, $row),
-						join(' AND ', array_map(function($field) {
-							return sprintf('%s = :__%s', $field, $field);
-						}, $mapping->getKey()))
-					));
+			foreach ($this->filter($mapping, $row, 'UPDATE') as $column => $value) {
+				if (in_array($column, array_keys($mapping->getContextFields()))) {
+					continue;
 				}
 
-				foreach ($this->filter($mapping, $row, 'UPDATE') as $column => $value) {
-					if (in_array($column, array_keys($mapping->getContextFields()))) {
-						continue;
-					}
+				$index = array_search($column, $mapping->getKey());
 
-					$index = array_search($column, $mapping->getKey());
+				$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
 
-					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
-
-					if ($index !== FALSE) {
-						$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
-					}
-				}
-
-				try {
-					$update_statement->execute();
-
-				} catch (\Exception $e) {
-					$this->log(sprintf(
-						'Failed updating %s with the following: %s  The database returned: %s',
-						ucwords(str_replace('_', ' ', $mapping->getDestination())),
-						json_encode($this->filter($mapping, $row, 'UPDATE')),
-						$e->getMessage()
-					));
+				if ($index !== FALSE) {
+					$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
 				}
 			}
+
+			try {
+				$update_statement->execute();
+
+			} catch (\Exception $e) {
+				$this->log(sprintf(
+					'Failed updating %s with the following: %s  The database returned: %s',
+					ucwords(str_replace('_', ' ', $mapping->getDestination())),
+					json_encode($this->filter($mapping, $row, 'UPDATE')),
+					$e->getMessage()
+				));
+			}
+		}
+	}
+
+
+	/**
+	 * 
+	 */
+	protected function truncateTable(Mapping $mapping)
+	{
+		try {
+			$this->destination->query('TRUNCATE TABLE %s', $mapping->getDestination());
+		}  catch (\Exception $e) {
+			$this->log(sprintf('Could not truncate destination table: %s  The database returned: %s',
+				$mapping->getDestination(),
+				$e->getMessage()
+			));
 		}
 	}
 
