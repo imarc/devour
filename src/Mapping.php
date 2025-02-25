@@ -338,7 +338,7 @@ class Mapping
 
 		$sql = $this->compose(
 			'SELECT %s from devour_temp_%s inner JOIN %s ON (%s) WHERE %s.%s IS NOT NULL %s',
-			$this->makeTemporaryFields(),
+			$this->makeUpdateFields(),
 			$this->getDestination(),
 			$this->getDestination(),
 			$join_keys,
@@ -538,6 +538,25 @@ class Mapping
 		return join(', ', array_map(function($field) {
 			return sprintf("devour_temp_%s.%s", $this->getDestination(), $field);
 		}, array_keys($fields)));
+	}
+
+
+	/**
+	 * 
+	 */
+	protected function makeUpdateFields()
+	{
+		$fields = array();
+
+		foreach ($this->fields as $alias => $target) {
+			$fields[] = sprintf('devour_temp_%s.%s as %s', $this->getDestination(), $alias, $alias);
+		}
+
+		foreach ($this->contextFields as $alias => $target) {
+			$fields[] = sprintf('devour_temp_%s.%s as %s', $this->getDestination(), $alias, $alias);
+		}
+
+		return implode(', ', $fields);
 	}
 
 
