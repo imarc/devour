@@ -980,7 +980,7 @@ class Synchronizer
 				));
 			}
 
-			foreach ($this->filter($mapping, $row, 'UPDATE') as $column => $value) {
+			foreach ($row as $column => $value) {
 				if (in_array($column, array_keys($mapping->getContextFields()))) {
 					continue;
 				}
@@ -993,6 +993,7 @@ class Synchronizer
 					$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
 				}
 			}
+			
 
 			try {
 				$update_statement->execute();
