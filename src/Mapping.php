@@ -575,7 +575,7 @@ class Mapping
 			$fields[] = sprintf('%s as %s', $target, $alias);
 		}
 
-		if ($temp) {
+		if ($temp && count($this->updateWheres)) {
 			$fields[] = sprintf('(CASE WHEN %s THEN 1 ELSE 0 END) as devour_updated', $this->makeSourceUpdateWheres());
 		}
 

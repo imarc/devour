@@ -174,7 +174,7 @@ class Synchronizer
 	public function createTemporaryTable($mapping)
 	{
 		$this->destination->query(sprintf("
-			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default false %s)
+			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default true %s)
 			",
 			$mapping->getDestination(),
 			$mapping->getDestination(),
