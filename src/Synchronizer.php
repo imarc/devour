@@ -947,66 +947,71 @@ class Synchronizer
 			return;
 		}
 
-		try {
-			$source_select_query = $mapping->composeSourceUpdateSelectQuery($force);
-			$update_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
-		} catch (\Exception $e) {
-			$this->log(sprintf(
-				"Failed selecting update results with query: %s  The database returned: %s",
-				$source_select_query,
-				$e->getMessage()
-			));
-		}
-
-		if (!$force) {
-			$this->log('...gathering updated records');
-		}
-
-		if (!count($update_results)) {
-			return NULL;
-		} else {
-			$this->log(sprintf('...updating  %s records', count($update_results)));
-		}
-		
-		foreach ($update_results as $i => $row) {
-			if (!$i) {
-				$update_statement = $this->destination->prepare(sprintf(
-					'UPDATE %s SET %s WHERE %s',
-					$mapping->getDestination(),
-					$this->composeSetParams($mapping, $row),
-					join(' AND ', array_map(function($field) {
-						return sprintf('%s = :__%s', $field, $field);
-					}, $mapping->getKey()))
-				));
-			}
-
-			foreach ($row as $column => $value) {
-				if (in_array($column, array_keys($mapping->getContextFields()))) {
-					continue;
-				}
-
-				$index = array_search($column, $mapping->getKey());
-
-				$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
-
-				if ($index !== FALSE) {
-					$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
-				}
-			}
-			
-
+		$offset = 0;
+		do {
 			try {
-				$update_statement->execute();
-
+				$source_select_query = $mapping->composeSourceUpdateSelectQuery($force, $this->chunkLimit, $offset);
+				$update_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			} catch (\Exception $e) {
 				$this->log(sprintf(
-					'Failed updating %s with the following: %s  The database returned: %s',
-					ucwords(str_replace('_', ' ', $mapping->getDestination())),
-					json_encode($this->filter($mapping, $row, 'UPDATE')),
+					"Failed selecting update results with query: %s  The database returned: %s",
+					$source_select_query,
 					$e->getMessage()
 				));
 			}
-		}
+
+			if (!$force) {
+				$this->log('...gathering updated records');
+			}
+
+			if (!count($update_results)) {
+				return NULL;
+			} else {
+				$this->log(sprintf('...updating  %s records', count($update_results)));
+			}
+			
+			foreach ($update_results as $i => $row) {
+				if (!$i) {
+					$update_statement = $this->destination->prepare(sprintf(
+						'UPDATE %s SET %s WHERE %s',
+						$mapping->getDestination(),
+						$this->composeSetParams($mapping, $row),
+						join(' AND ', array_map(function($field) {
+							return sprintf('%s = :__%s', $field, $field);
+						}, $mapping->getKey()))
+					));
+				}
+
+				foreach ($row as $column => $value) {
+					if (in_array($column, array_keys($mapping->getContextFields()))) {
+						continue;
+					}
+
+					$index = array_search($column, $mapping->getKey());
+
+					$update_statement->bindValue(':' . $column, $value, $this->getPdoType($value));
+
+					if ($index !== FALSE) {
+						$update_statement->bindValue(':__' . $column, $value, $this->getPdoType($value));
+					}
+				}
+				
+
+				try {
+					$update_statement->execute();
+
+				} catch (\Exception $e) {
+					$this->log(sprintf(
+						'Failed updating %s with the following: %s  The database returned: %s',
+						ucwords(str_replace('_', ' ', $mapping->getDestination())),
+						json_encode($this->filter($mapping, $row, 'UPDATE')),
+						$e->getMessage()
+					));
+				}
+			}
+
+			$offset += $this->chunkLimit;
+		} while ($mapping->isChunked() && count($update_results) >= $this->chunkLimit);
 	}
 
 

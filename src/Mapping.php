@@ -20,6 +20,12 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	protected $destinationOrderBys = array();
+
+
+	/**
 	 *
 	 */
 	protected $contextFields = array();
@@ -123,6 +129,14 @@ class Mapping
 		$this->contextFields[$alias] = $target;
 
 		return $this;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function addDestinationOrderBy($field, $direction) {
+		$this->destinationOrderBys[$field] = $direction;
 	}
 
 
@@ -327,7 +341,7 @@ class Mapping
 	/**
 	 * 
 	 */
-	public function composeSourceUpdateSelectQuery($force = FALSE)
+	public function composeSourceUpdateSelectQuery($force = FALSE, $limit = NULL, $offset = NULL)
 	{
 		$keys = [];
 		foreach ($this->key as $key) {
@@ -336,15 +350,26 @@ class Mapping
 
 		$join_keys = join(' AND ', $keys);
 
+		if (count($this->destinationOrderBys)) {
+			$chunk = ' ORDER BY ';
+			$chunk .= join(', ', array_map(function ($field, $destination) {
+				return sprintf('%s %s', $field, $direction);
+			}, $this->destinationOrderBys));
+
+			$chunk .= $limit  !== NULL ? sprintf(' LIMIT %i', $limit)   : '';
+			$chunk .= $offset !== NULL ? sprintf(' OFFSET %i', $offset) : '';
+		}
+		
 		$sql = $this->compose(
-			'SELECT %s from devour_temp_%s inner JOIN %s ON (%s) WHERE %s.%s IS NOT NULL %s',
+			'SELECT %s from devour_temp_%s inner JOIN %s ON (%s) WHERE %s.%s IS NOT NULL %s %s',
 			$this->makeUpdateFields(),
 			$this->getDestination(),
 			$this->getDestination(),
 			$join_keys,
 			$this->getDestination(),
 			$this->key[0],
-			$force ? '' : ' AND devour_updated = TRUE'
+			$force ? '' : ' AND devour_updated = TRUE',
+			$chunk ?? ''
 		);
 
 		return $sql;
@@ -452,6 +477,15 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	public function isChunked()
+	{
+		return count($this->destinationOrderBys);
+	}
+
+
+	/**
 	 *
 	 */
 	public function isImmutable()
@@ -525,6 +559,15 @@ class Mapping
 	protected function makeDestinationKey()
 	{
 		return join(', ', $this->key);
+	}
+
+
+	/**
+	 * 
+	 */
+	protected function makeDestinationOrderBys()
+	{
+		
 	}
 
 
