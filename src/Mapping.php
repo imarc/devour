@@ -356,8 +356,8 @@ class Mapping
 				return sprintf('%s %s', $field, $direction);
 			}, array_keys($this->destinationOrderBys), array_values($this->destinationOrderBys)));
 
-			$chunk .= $limit  !== NULL ? sprintf(' LIMIT %i', $limit)   : '';
-			$chunk .= $offset !== NULL ? sprintf(' OFFSET %i', $offset) : '';
+			$chunk .= $limit  !== NULL ? sprintf(' LIMIT %d', $limit)   : '';
+			$chunk .= $offset !== NULL ? sprintf(' OFFSET %d', $offset) : '';
 		}
 		
 		$sql = $this->compose(
