@@ -354,7 +354,7 @@ class Mapping
 			$chunk = ' ORDER BY ';
 			$chunk .= join(', ', array_map(function ($field, $direction) {
 				return sprintf('%s %s', $field, $direction);
-			}, $this->destinationOrderBys));
+			}, array_keys($this->destinationOrderBys), array_values($this->destinationOrderBys)));
 
 			$chunk .= $limit  !== NULL ? sprintf(' LIMIT %i', $limit)   : '';
 			$chunk .= $offset !== NULL ? sprintf(' OFFSET %i', $offset) : '';
