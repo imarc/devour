@@ -352,7 +352,7 @@ class Mapping
 
 		if (count($this->destinationOrderBys)) {
 			$chunk = ' ORDER BY ';
-			$chunk .= join(', ', array_map(function ($field, $destination) {
+			$chunk .= join(', ', array_map(function ($field, $direction) {
 				return sprintf('%s %s', $field, $direction);
 			}, $this->destinationOrderBys));
 
