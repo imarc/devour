@@ -146,7 +146,9 @@ class Synchronizer
 		$this->destination->query("
 			CREATE TABLE devour_stats(
 				start_time TIMESTAMP PRIMARY KEY,
+				scheduling_time TIMESTAMP,
 				end_time TIMESTAMP,
+				tables TEXT,
 				force BOOLEAN,
 				log TEXT
 			);
