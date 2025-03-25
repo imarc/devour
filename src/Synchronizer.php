@@ -145,8 +145,9 @@ class Synchronizer
 	{
 		$this->destination->query("
 			CREATE TABLE devour_stats(
-				start_time TIMESTAMP PRIMARY KEY,
-				scheduling_time TIMESTAMP,
+				id INT AUTO_INCREMENT PRIMARY KEY,
+				start_time TIMESTAMP,
+				scheduled_time TIMESTAMP,
 				end_time TIMESTAMP,
 				tables TEXT,
 				force BOOLEAN,
@@ -281,7 +282,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function isRunning(): bool
+	public function isScheduled(): ?bool
 	{
 		$result = $this->destination->query("
 			SELECT
@@ -289,7 +290,9 @@ class Synchronizer
 			FROM
 				devour_stats
 			WHERE
-				end_time IS NULL
+				start_time IS NULL
+			AND
+				scheduled_time IS NOT NULL
 			LIMIT
 				1
 		");
@@ -302,6 +305,54 @@ class Synchronizer
 	}
 
 
+	/**
+	 *
+	 */
+	public function isRunning(): ?bool
+	{
+		$result = $this->destination->query("
+			SELECT
+				COUNT(*) as running
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			AND
+				start_time IS NOT NULL
+			LIMIT
+				1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'];
+	}
+
+
+	/**
+	 *
+	 */
+	public function schedule(array $mappings = array()): array
+	{
+		$this->stat();
+
+		if (!$this->statGet('new')) {
+			throw new RuntimeException(
+				sprintf(
+					'Syncing is already scheduled, scheduled at %s.',
+					$this->statGet('scheduled_time')
+				)
+			);
+		}
+
+		$this->statSet('scheduled_time', date('Y-m-d H:i:s'));
+		$this->statSet('tables', implode(', ', $mappings));
+
+		return $this->stat;
+	}
+
 
 	/**
 	 *
@@ -310,8 +361,7 @@ class Synchronizer
 	{
 		$this->stat();
 
-
-		if (!$this->statGet('new')) {
+		if ($this->isRunning()) {
 			throw new RuntimeException(
 				sprintf(
 					'Syncing is already running, started at %s.',
@@ -365,21 +415,20 @@ class Synchronizer
 	 */
 	public function stat(): void
 	{
-		$result = $this->destination
-			->query("SELECT * FROM devour_stats ORDER BY start_time DESC LIMIT 1")
-			->fetch(PDO::FETCH_ASSOC)
-		;
-
-		if ($result && !$result['end_time']) {
-			$this->stat = $result;
-
+		if (!$this->isScheduled() && !$this->isRunning()) {
+			$this->stat = $this->destination
+				->query("SELECT * FROM devour_stats ORDER BY id DESC LIMIT 1")
+				->fetch(PDO::FETCH_ASSOC)
+			;
 		} else {
 			$this->stat = [
-				'new'        => TRUE,
-				'start_time' => NULL,
-				'end_time'   => NULL,
-				'log'        => NULL,
-				'force'      => 0
+				'new'            => TRUE,
+				'start_time'     => NULL,
+				'scheduled_time' => NULL,
+				'end_time'       => NULL,
+				'tables'         => NULL,
+				'log'            => NULL,
+				'force'          => 0
 			];
 		}
 	}
@@ -409,14 +458,16 @@ class Synchronizer
 			unset($this->stat['new']);
 
 			$insert_statement  = $this->destination->prepare(
-				"INSERT INTO devour_stats VALUES(:start_time, :end_time, :log, :force)"
+				"INSERT INTO devour_stats VALUES(:start_time, :scheduled_time, :end_time, :tables, :force, :log)"
 			);
 
 			$insert_statement->execute($this->stat);
 
+			$this->stat['id'] = $this->destination->lastInsertId();
+
 		} else {
 			$update_statement = $this->destination->prepare(
-				"UPDATE devour_stats SET end_time = :end_time, log = :log, force = :force WHERE start_time = :start_time"
+				"UPDATE devour_stats SET start_time = :start_time, scheduled_time = :scheduled_time, end_time = :end_time, tables = :tables, log = :log, force = :force WHERE id = :id"
 			);
 
 			$update_statement->execute($this->stat);
