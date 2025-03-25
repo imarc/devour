@@ -254,6 +254,31 @@ class Synchronizer
 
 
 	/**
+	 * 
+	 */
+	public function getScheduledTime(): ?int
+	{
+		$result = $this->destination->query("
+			SELECT
+				scheduled_time
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			AND
+				start_time IS NULL
+			LIMIT 1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['scheduled_time']);
+	}
+
+
+	/**
 	 *
 	 */
 	public function getLastSyncTime(): ?string
@@ -348,7 +373,7 @@ class Synchronizer
 		}
 
 		$this->statSet('scheduled_time', date('Y-m-d H:i:s'));
-		$this->statSet('tables', implode(', ', $mappings));
+		$this->statSet('tables', json_encode($mappings));
 
 		return $this->stat;
 	}
@@ -415,11 +440,13 @@ class Synchronizer
 	 */
 	public function stat(): void
 	{
-		if (!$this->isScheduled() && !$this->isRunning()) {
-			$this->stat = $this->destination
-				->query("SELECT * FROM devour_stats ORDER BY id DESC LIMIT 1")
-				->fetch(PDO::FETCH_ASSOC)
-			;
+		
+		$result = $this->destination
+			->query("SELECT * FROM devour_stats ORDER BY id DESC LIMIT 1")
+			->fetch(PDO::FETCH_ASSOC)
+		;
+		if ($result && $result['scheduled_time'] && !$result['start_time']) {
+			$this->stat = $result;
 		} else {
 			$this->stat = [
 				'new'            => TRUE,
@@ -457,18 +484,34 @@ class Synchronizer
 		if (array_key_exists('new', $this->stat)) {
 			unset($this->stat['new']);
 
-			$insert_statement  = $this->destination->prepare(
-				"INSERT INTO devour_stats VALUES(:start_time, :scheduled_time, :end_time, :tables, :force, :log)"
-			);
+			$insert_statement  = $this->destination->prepare("
+				INSERT INTO 
+					devour_stats 
+					(start_time, scheduled_time, end_time, tables, force, log)
+					VALUES
+						(:start_time, :scheduled_time, :end_time, :tables, :force, :log)
+			");
 
 			$insert_statement->execute($this->stat);
 
 			$this->stat['id'] = $this->destination->lastInsertId();
 
 		} else {
-			$update_statement = $this->destination->prepare(
-				"UPDATE devour_stats SET start_time = :start_time, scheduled_time = :scheduled_time, end_time = :end_time, tables = :tables, log = :log, force = :force WHERE id = :id"
-			);
+			// TODO: Need to get force working, look into bind parameter types
+			unset($this->stat['force']);
+			$update_statement = $this->destination->prepare("
+				UPDATE 
+					devour_stats 
+				SET 
+					start_time = :start_time, 
+					scheduled_time = :scheduled_time, 
+					end_time = :end_time, 
+					tables = :tables, 
+					force = false,
+					log = :log 
+				WHERE 
+					id = :id
+			");
 
 			$update_statement->execute($this->stat);
 		}
