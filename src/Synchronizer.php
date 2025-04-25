@@ -147,6 +147,7 @@ class Synchronizer
 			CREATE TABLE devour_stats(
 				id INT AUTO_INCREMENT PRIMARY KEY,
 				start_time TIMESTAMP,
+				scheduled_by TEXT,
 				scheduled_time TIMESTAMP,
 				end_time TIMESTAMP,
 				tables TEXT,
@@ -256,6 +257,29 @@ class Synchronizer
 	/**
 	 * 
 	 */
+	public function getScheduledBy(): ?string
+	{
+		$result = $this->destination->query("
+			SELECT
+				scheduled_by
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NULL
+			LIMIT 1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return $result->fetch(PDO::FETCH_ASSOC)['scheduled_by'];
+	}
+
+
+	/**
+	 * 
+	 */
 	public function getScheduledTime(): ?int
 	{
 		$result = $this->destination->query("
@@ -359,7 +383,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function schedule(array $mappings = array()): array
+	public function schedule(array $mappings = array(), $scheduled_by = NULL): array
 	{
 		$this->stat();
 
@@ -372,6 +396,7 @@ class Synchronizer
 			);
 		}
 
+		$this->statSet('scheduled_by', $scheduled_by);
 		$this->statSet('scheduled_time', date('Y-m-d H:i:s'));
 		$this->statSet('tables', json_encode($mappings));
 
@@ -451,6 +476,7 @@ class Synchronizer
 			$this->stat = [
 				'new'            => TRUE,
 				'start_time'     => NULL,
+				'scheduled_by'   => NULL,
 				'scheduled_time' => NULL,
 				'end_time'       => NULL,
 				'tables'         => NULL,
@@ -487,9 +513,9 @@ class Synchronizer
 			$insert_statement  = $this->destination->prepare("
 				INSERT INTO 
 					devour_stats 
-					(start_time, scheduled_time, end_time, tables, force, log)
+					(start_time, scheduled_by, scheduled_time, end_time, tables, force, log)
 					VALUES
-						(:start_time, :scheduled_time, :end_time, :tables, :force, :log)
+						(:start_time, :scheduled_by, :scheduled_time, :end_time, :tables, :force, :log)
 			");
 
 			$insert_statement->execute($this->stat);
@@ -504,6 +530,7 @@ class Synchronizer
 					devour_stats 
 				SET 
 					start_time = :start_time, 
+					scheduled_by = :scheduled_by,
 					scheduled_time = :scheduled_time, 
 					end_time = :end_time, 
 					tables = :tables, 
