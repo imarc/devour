@@ -305,6 +305,32 @@ class Synchronizer
 	/**
 	 *
 	 */
+	public function getLastCompletedTime(): ?string
+	{
+		$result = $this->destination->query("
+			SELECT
+				end_time
+			FROM
+				devour_stats
+			WHERE
+				end_time IS NOT NULL
+			ORDER BY
+				start_time DESC
+			LIMIT
+				1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['end_time']);
+	}
+
+
+	/**
+	 *
+	 */
 	public function getLastSyncTime(): ?string
 	{
 		$result = $this->destination->query("
