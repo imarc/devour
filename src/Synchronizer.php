@@ -147,7 +147,8 @@ class Synchronizer
 		// TODO: Make this database driver agnostic
 		$this->destination->query("
 			CREATE SEQUENCE devour_stats_id_seq START 100 INCREMENT 5;
-
+		");
+		$this->destination->query("
 			CREATE TABLE devour_stats(
 				id INT NOT NULL DEFAULT nextval('devour_stats_id_seq') PRIMARY KEY,
 				start_time TIMESTAMP,
@@ -158,7 +159,8 @@ class Synchronizer
 				force BOOLEAN,
 				log TEXT
 			);
-
+		");
+		$this->destination->query("
 			ALTER SEQUENCE devour_stats_id_seq OWNED BY devour_stats.id;
 		");
 	}
