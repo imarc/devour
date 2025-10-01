@@ -143,9 +143,13 @@ class Synchronizer
 	 */
 	public function createStatsTable()
 	{
+		// This is postgres specific, but it's the only way to get a sequence to work with the id column
+		// TODO: Make this database driver agnostic
 		$this->destination->query("
+			CREATE SEQUENCE devour_stats_id_seq START 100 INCREMENT 5;
+
 			CREATE TABLE devour_stats(
-				id INT AUTO_INCREMENT PRIMARY KEY,
+				id INT NOT NULL DEFAULT nextval('devour_stats_id_seq') PRIMARY KEY,
 				start_time TIMESTAMP,
 				scheduled_by TEXT,
 				scheduled_time TIMESTAMP,
@@ -154,6 +158,8 @@ class Synchronizer
 				force BOOLEAN,
 				log TEXT
 			);
+
+			ALTER SEQUENCE devour_stats_id_seq OWNED BY devour_stats.id;
 		");
 	}
 
