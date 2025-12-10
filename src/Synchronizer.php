@@ -953,14 +953,16 @@ class Synchronizer
 			try {
 				$key_wheres = [];
 				foreach ($mapping->getKey() as $key) {
-					$key_wheres[] = sprintf("%s = '%s'", $key,  $deletion[$key]);
+					$key_wheres[] = sprintf("%s = '%s'", $key,  pg_escape_string($deletion[$key]));
 				}
 
-				$this->destination->query(sprintf(
+				$destination_delete_query = sprintf(
 					'DELETE FROM %s WHERE %s',
 					$mapping->getDestination(),
 					join(' AND ', $key_wheres)
-				), PDO::FETCH_ASSOC);
+				);
+
+				$this->destination->query($destination_delete_query, PDO::FETCH_ASSOC);
 			} catch (\Exception $e) {
 				$this->log(sprintf(
 					"Failed removing destination records with query: %s  The database returned: %s",
