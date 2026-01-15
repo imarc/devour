@@ -8,6 +8,12 @@ namespace Devour;
 class Mapping
 {
 	/**
+	 * 
+	 */
+	protected $adjuncts = array();
+
+	
+	/**
 	 *
 	 */
 	protected $dependencies = array();
@@ -107,6 +113,17 @@ class Mapping
 		$this->destination = $destination;
 
 		settype($this->key, 'array');
+	}
+
+
+	/**
+	 * 
+	 */
+	public function addAdjunct($adjunct, $keys)
+	{
+		$this->adjuncts[$adjunct] = $keys;
+
+		return $this;
 	}
 
 
@@ -257,6 +274,24 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	public function composeSourceAdjunctKeyQuery(Mapping $adjunct)
+	{
+		$table = $adjunct->getDestination();
+		$keys  = $this->adjuncts[$table];
+
+		$sql = $this->compose(
+			'SELECT %s FROM %s WHERE %s AND %s',
+			$adjunct->makeSourceKey(),
+			$adjunct->makeSourceFrom(),
+			$adjunct->makeSourceWheres(),
+			sprintf('%s IN (%s)', $keys['source'], $
+		)
+	}
+
+
+	/**
 	 *
 	 */
 	public function composeDestinationExistingKeysQuery()
@@ -315,7 +350,7 @@ class Mapping
 	/**
 	 * 
 	 */
-	public function composeSourceDeleteSelectQuery()
+	public function composeSourceDeleteSelectQuery($ids = array())
 	{
 		$keys = [];
 		foreach ($this->getKey() as $key) {
@@ -324,17 +359,25 @@ class Mapping
 
 		$join_keys = join(' AND ', $keys);
 
-		$sql = $this->compose(
-			'SELECT %s.* from devour_temp_%s RIGHT OUTER JOIN %s ON (%s) WHERE devour_temp_%s.%s IS NULL',
+		$sql = 'SELECT %s.* from devour_temp_%s RIGHT OUTER JOIN %s ON (%s) WHERE devour_temp_%s.%s IS NULL';
+
+		$params = [
 			$this->getDestination(),
 			$this->getDestination(),
 			$this->getDestination(),
 			$join_keys,
 			$this->getDestination(),
 			$this->key[0]
-		);
+		];
 
-		return $sql;
+		if (!empty($ids)) {
+			if ($keys) {
+				$sql .= ' AND %s';
+				$params[] = $this->makeDestinationInKeys($keys);
+			}
+		}
+
+		return $this->compose($sql, ...$params);
 	}
 
 
@@ -416,6 +459,15 @@ class Mapping
 		);
 
 		return $sql;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function getAdjuncts()
+	{
+		return $this->adjuncts;
 	}
 
 
