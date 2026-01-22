@@ -361,6 +361,14 @@ class Synchronizer
 		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']);
 	}
 
+	/**
+	 * 
+	 */
+	public function getMapping($name)
+	{
+		return $this->mappings[$name] ?? NULL;
+	}
+
 
 	/**
 	 * 
@@ -921,14 +929,6 @@ class Synchronizer
 			}
 		}
 
-		foreach ($mapping->getAdjuncts() as $adjunct => $config) {
-			$adjunct   = $this->mappings[$adjunct];
-			$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct);
-			$keys      = $this->source->query($key_query);
-
-			$this->syncMapping($adjunct, $keys);
-		}
-
 		//
 		// We use the start sync time, but set it after its completed in order to catch anything
 		// that might be updated while the sync is taking place (in the next one)
@@ -937,6 +937,16 @@ class Synchronizer
 		$this->updateSet($name, $start_sync_time);
 
 		$this->synced[array_pop($this->stack)] = TRUE;
+
+		foreach ($mapping->getAdjuncts() as $adjunct => $config) {
+			$adjunct   = $this->mappings[$adjunct];
+			$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
+			$keys      = $this->source->query($key_query)->fetchAll();
+
+			$keys = $this->filterKeys($adjunct, $keys, 'select');
+
+			$this->syncMapping($adjunct->getDestination(), $keys, $force_update);
+		}
 	}
 
 
