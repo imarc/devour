@@ -938,14 +938,16 @@ class Synchronizer
 
 		$this->synced[array_pop($this->stack)] = TRUE;
 
-		foreach ($mapping->getAdjuncts() as $adjunct => $config) {
-			$adjunct   = $this->mappings[$adjunct];
-			$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
-			$keys      = $this->source->query($key_query)->fetchAll();
+		if ($ids) {
+			foreach ($mapping->getAdjuncts() as $adjunct => $config) {
+				$adjunct   = $this->mappings[$adjunct];
+				$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
+				$keys      = $this->source->query($key_query)->fetchAll();
 
-			$keys = $this->filterKeys($adjunct, $keys, 'select');
+				$keys = $this->filterKeys($adjunct, $keys, 'select');
 
-			$this->syncMapping($adjunct->getDestination(), $keys, $force_update);
+				$this->syncMapping($adjunct->getDestination(), $keys, $force_update);
+			}
 		}
 	}
 
