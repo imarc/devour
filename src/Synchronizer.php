@@ -361,6 +361,23 @@ class Synchronizer
 		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']);
 	}
 
+	/**
+	 * 
+	 */
+	public function getMapping($name)
+	{
+		return $this->mappings[$name] ?? NULL;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function getMappings(): array
+	{
+		return $this->mappings;
+	}
+
 
 	/**
 	 *
@@ -441,7 +458,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function run(array $mappings = array(), $force_update = FALSE): array
+	public function run(array $mappings = array(), $ids = array(), $force_update = FALSE): array
 	{
 		$this->stat();
 
@@ -479,7 +496,7 @@ class Synchronizer
 
 			foreach ($mappings as $mapping) {
 				try {
-					$this->syncMapping($mapping, $force_update);
+					$this->syncMapping($mapping, $ids[$mapping] ?? [], $force_update);
 
 				} catch (\Exception $e) {
 					$this->log($e->getMessage());
@@ -848,7 +865,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMapping($name, $force_update)
+	protected function syncMapping($name, $ids, $force_update)
 	{
 		if (!isset($this->mappings[$name])) {
 			throw new RuntimeException(sprintf(
@@ -875,7 +892,7 @@ class Synchronizer
 		//
 
 		foreach ($mapping->getDependencies() as $dependency) {
-			$this->syncMapping($dependency, $force_update);
+			$this->syncMapping($dependency, [], $force_update);
 		}
 
 		if ($this->strictTime) {
@@ -889,17 +906,17 @@ class Synchronizer
 		$this->log(sprintf('Syncing %s', $name));
 
 		$this->createTemporaryTable($mapping);
-		$this->syncMappingTemporary($mapping);
+		$this->syncMappingTemporary($mapping, $ids);
 
 		$start_sync_time  = date('Y-m-d H:i:s');
 
-		if ($this->truncate[$mapping->getDestination()]) {
+		if ($this->truncate[$mapping->getDestination()] && empty($ids)) {
 			$this->truncateTable($mapping);
 			$this->syncMappingInserts($mapping);
 
 		} else {
 			if ($mapping->canDelete()) {
-				$this->syncMappingDeletes($mapping);
+				$this->syncMappingDeletes($mapping, $ids);
 				$this->log('...completed deletions');
 			}
 
@@ -920,20 +937,32 @@ class Synchronizer
 		$this->updateSet($name, $start_sync_time);
 
 		$this->synced[array_pop($this->stack)] = TRUE;
+
+		if ($ids) {
+			foreach ($mapping->getAdjuncts() as $adjunct => $config) {
+				$adjunct   = $this->mappings[$adjunct];
+				$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
+				$keys      = $this->source->query($key_query)->fetchAll();
+
+				$keys = $this->filterKeys($adjunct, $keys, 'select');
+
+				$this->syncMapping($adjunct->getDestination(), $keys, $force_update);
+			}
+		}
 	}
 
 
 	/**
 	 *
 	 */
-	protected function syncMappingDeletes(Mapping $mapping)
+	protected function syncMappingDeletes(Mapping $mapping, $ids = array())
 	{
 		if (!$mapping->canDelete()) {
 			return;
 		}
 
 		try {
-			$delete_select_query = $mapping->composeSourceDeleteSelectQuery();
+			$delete_select_query = $mapping->composeSourceDeleteSelectQuery($ids);
 			$delete_results      = $this->destination->query($delete_select_query)->fetchAll();
 		} catch (\Exception $e) {
 			$this->log(sprintf(
@@ -1044,9 +1073,9 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMappingTemporary(Mapping $mapping)
+	protected function syncMappingTemporary(Mapping $mapping, $ids = array())
 	{
-		$source_select_query = $mapping->composeSourceSelectQuery();
+		$source_select_query = $mapping->composeSourceSelectQuery($ids);
 		try {
 			$source_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			$generated      = array_keys($mapping->getGenerators());

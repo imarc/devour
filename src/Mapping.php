@@ -8,6 +8,12 @@ namespace Devour;
 class Mapping
 {
 	/**
+	 * 
+	 */
+	protected $adjuncts = array();
+
+	
+	/**
 	 *
 	 */
 	protected $dependencies = array();
@@ -107,6 +113,17 @@ class Mapping
 		$this->destination = $destination;
 
 		settype($this->key, 'array');
+	}
+
+
+	/**
+	 * 
+	 */
+	public function addAdjunct($adjunct, $keys)
+	{
+		$this->adjuncts[$adjunct] = $keys;
+
+		return $this;
 	}
 
 
@@ -257,6 +274,28 @@ class Mapping
 
 
 	/**
+	 * 
+	 */
+	public function composeSourceAdjunctKeyQuery(Mapping $adjunct, $ids)
+	{
+		$table = $adjunct->getDestination();
+		$keys  = $this->adjuncts[$table];
+
+		$sql = $this->compose(
+			'SELECT %s FROM %s WHERE %s AND (%s)',
+			$adjunct->makeSourceKey(),
+			$adjunct->makeSourceFrom(),
+			$adjunct->makeSourceWheres(),
+			join(' OR ', array_map(function($id) use ($keys) {
+				return sprintf("RTRIM(LTRIM(%s)) = '%s'", $keys['source'], $id[$this->key[0]]);
+			}, $ids))
+		);
+
+		return $sql;
+	}
+
+
+	/**
 	 *
 	 */
 	public function composeDestinationExistingKeysQuery()
@@ -315,7 +354,7 @@ class Mapping
 	/**
 	 * 
 	 */
-	public function composeSourceDeleteSelectQuery()
+	public function composeSourceDeleteSelectQuery($ids = array())
 	{
 		$keys = [];
 		foreach ($this->getKey() as $key) {
@@ -324,17 +363,25 @@ class Mapping
 
 		$join_keys = join(' AND ', $keys);
 
-		$sql = $this->compose(
-			'SELECT %s.* from devour_temp_%s RIGHT OUTER JOIN %s ON (%s) WHERE devour_temp_%s.%s IS NULL',
+		$sql = 'SELECT %s.* from devour_temp_%s RIGHT OUTER JOIN %s ON (%s) WHERE devour_temp_%s.%s IS NULL';
+
+		$params = [
 			$this->getDestination(),
 			$this->getDestination(),
 			$this->getDestination(),
 			$join_keys,
 			$this->getDestination(),
 			$this->key[0]
-		);
+		];
 
-		return $sql;
+		if (!empty($ids)) {
+			if ($keys) {
+				$sql .= ' AND %s';
+				$params[] = $this->makeDestinationInKeys($ids);
+			}
+		}
+
+		return $this->compose($sql, ...$params);
 	}
 
 
@@ -392,7 +439,7 @@ class Mapping
 			$sql .= ' AND %s';
 			$params[] = $this->makeSourceInKeys($keys);
 		}
-		
+
 		$sql = $this->compose(
 			$sql,
 			...$params
@@ -416,6 +463,31 @@ class Mapping
 		);
 
 		return $sql;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function composeKeys($ids)
+	{
+		return array_map(function($key) {
+			$keys = [];
+			foreach ($this->key as $id) {
+				$keys[$id] = $key;
+			}
+			
+			return $keys;
+		}, $ids);
+	}
+
+
+	/**
+	 * 
+	 */
+	public function getAdjuncts()
+	{
+		return $this->adjuncts;
 	}
 
 
@@ -544,9 +616,9 @@ class Mapping
 
 			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
 				if (is_string($key[$field])) {
-					return sprintf("%s = '%s'", $field, str_replace("'", "''", $key[$field]));
+					return sprintf("%s.%s = '%s'", $this->destination, $field, str_replace("'", "''", $key[$field]));
 				} else {
-					return sprintf("%s = %s", $field, $key[$field]);
+					return sprintf("%s.%s = %s", $this->destination, $field, $key[$field]);
 				}
 			}, $this->key)));
 		}, $keys)));
@@ -651,9 +723,9 @@ class Mapping
 
 			return sprintf($group, implode(' AND ', array_map(function($field) use ($key) {
 				if (is_string($key[$field])) {
-					return sprintf("%s = '%s'", $this->fields[$field], str_replace("'", "''", $key[$field]));
+					return sprintf("RTRIM(LTRIM(%s)) = '%s'", $this->fields[$field], str_replace("'", "''", $key[$field]));
 				} else {
-					return sprintf("%s = %s", $this->fields[$field], $key[$field]);
+					return sprintf("RTRIM(LTRIM(%s)) = %s", $this->fields[$field], $key[$field]);
 				}
 			}, $this->key)));
 		}, $keys)));
