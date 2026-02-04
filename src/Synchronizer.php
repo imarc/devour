@@ -156,6 +156,7 @@ class Synchronizer
 				scheduled_time TIMESTAMP,
 				end_time TIMESTAMP,
 				tables TEXT,
+				ids TEXT,
 				force BOOLEAN,
 				log TEXT
 			);
@@ -380,6 +381,34 @@ class Synchronizer
 
 
 	/**
+	 * 
+	 */
+	public function getNextScheduled()
+	{
+		$result = $this->destination->query("
+			SELECT
+				id
+			FROM
+				devour_stats
+			WHRE 
+				start_time IS NULL
+			AND
+				scheduled_time IS NOT NULL
+			ORDER BY
+				scheduled_time desc
+			LIMIT
+				1
+		");
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return (int) $result->fetch(PDO::FETCH_ASSOC)['id'];
+	}
+
+
+	/**
 	 *
 	 */
 	public function isScheduled(): ?bool
@@ -434,7 +463,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function schedule(array $mappings = array(), $scheduled_by = NULL): array
+	public function schedule(array $mappings = array(), array $ids = array(), $scheduled_by = NULL): array
 	{
 		$this->stat();
 
@@ -450,6 +479,9 @@ class Synchronizer
 		$this->statSet('scheduled_by', $scheduled_by);
 		$this->statSet('scheduled_time', date('Y-m-d H:i:s'));
 		$this->statSet('tables', json_encode($mappings));
+		if (count($mappings) == 1) {
+			$this->statSet('ids', json_encode($ids));
+		}
 
 		return $this->stat;
 	}
@@ -531,6 +563,7 @@ class Synchronizer
 				'scheduled_time' => NULL,
 				'end_time'       => NULL,
 				'tables'         => NULL,
+				'ids'            => NULL,
 				'log'            => NULL,
 				'force'          => 0
 			];
@@ -564,9 +597,9 @@ class Synchronizer
 			$insert_statement  = $this->destination->prepare("
 				INSERT INTO 
 					devour_stats 
-					(start_time, scheduled_by, scheduled_time, end_time, tables, force, log)
+					(start_time, scheduled_by, scheduled_time, end_time, tables, ids, force, log)
 					VALUES
-						(:start_time, :scheduled_by, :scheduled_time, :end_time, :tables, :force, :log)
+						(:start_time, :scheduled_by, :scheduled_time, :end_time, :tables, :ids, :force, :log)
 			");
 
 			$insert_statement->execute($this->stat);
@@ -585,6 +618,7 @@ class Synchronizer
 					scheduled_time = :scheduled_time, 
 					end_time = :end_time, 
 					tables = :tables, 
+					ids = :ids,
 					force = false,
 					log = :log 
 				WHERE 
