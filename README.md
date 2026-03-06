@@ -63,6 +63,7 @@ $mapping->setCsvConfig([
 
 Notes:
 
-- CSV data is materialized into a temporary source table before synchronization.
+- CSV data is materialized into a temporary staging table on the destination database before synchronization.
 - Existing database-to-database mappings are unchanged.
 - You can optionally pass `columns` in `setCsvConfig()` to control temporary table column definitions.
+- CSV mapping joins execute on the destination database, so join targets must be destination-accessible tables.
