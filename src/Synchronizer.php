@@ -23,6 +23,18 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected $csvLoader = NULL;
+
+
+	/**
+	 *
+	 */
+	protected $csvMaterializedSources = [];
+
+
+	/**
+	 *
+	 */
 	protected $destination = NULL;
 
 
@@ -135,6 +147,17 @@ class Synchronizer
 	public function addGenerator($name, callable $generator)
 	{
 		$this->generators[$name] = $generator;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setCsvSourceLoader(CsvSourceLoader $csv_loader)
+	{
+		$this->csvLoader = $csv_loader;
+
+		return $this;
 	}
 
 
@@ -929,6 +952,8 @@ class Synchronizer
 			$this->syncMapping($dependency, [], $force_update);
 		}
 
+		$this->prepareCsvSource($mapping);
+
 		if ($this->strictTime) {
 			$mapping->addParam('lastSynced', $this->updateGet($name));
 		} else {
@@ -1267,6 +1292,45 @@ class Synchronizer
 		} else {
 			return PDO::PARAM_STR;
 		}
+	}
+
+
+	/**
+	 *
+	 */
+	private function getCsvSourceLoader()
+	{
+		if ($this->csvLoader === NULL) {
+			$this->csvLoader = new CsvSourceLoader();
+		}
+
+		return $this->csvLoader;
+	}
+
+
+	/**
+	 *
+	 */
+	private function prepareCsvSource(Mapping $mapping)
+	{
+		if (!$mapping->isCsvSource()) {
+			return;
+		}
+
+		$destination = $mapping->getDestination();
+		if (isset($this->csvMaterializedSources[$destination])) {
+			$mapping->setSource($this->csvMaterializedSources[$destination]);
+			return;
+		}
+
+		$config = $mapping->getCsvConfig();
+		$alias  = $config['alias'] ?? 'csvsrc';
+
+		$table = $this->getCsvSourceLoader()->materialize($this->source, $mapping);
+		$source = sprintf('%s %s', $table, $alias);
+
+		$mapping->setSource($source);
+		$this->csvMaterializedSources[$destination] = $source;
 	}
 
 
