@@ -40,6 +40,12 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $csv = NULL;
+
+
+	/**
+	 *
+	 */
 	protected $fields = array();
 
 
@@ -512,9 +518,27 @@ class Mapping
 	/**
 	 *
 	 */
+	public function getFields()
+	{
+		return $this->fields;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getKey()
 	{
 		return $this->key;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getSource()
+	{
+		return $this->source;
 	}
 
 
@@ -592,6 +616,54 @@ class Mapping
 	public function setImmutable($value)
 	{
 		$this->immutable = $value;
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setCsvConfig(array $config)
+	{
+		$this->csv = array_merge([
+			'header'    => TRUE,
+			'delimiter' => ',',
+			'enclosure' => '"',
+			'escape'    => '\\',
+			'table'     => NULL,
+			'columns'   => [],
+			'alias'     => 'csvsrc'
+		], $config);
+
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getCsvConfig()
+	{
+		return $this->csv;
+	}
+
+
+	/**
+	 *
+	 */
+	public function isCsvSource()
+	{
+		return is_array($this->csv) && !empty($this->csv['path']);
+	}
+
+
+	/**
+	 *
+	 */
+	public function setSource($source)
+	{
+		$this->source = $source;
+
 		return $this;
 	}
 
