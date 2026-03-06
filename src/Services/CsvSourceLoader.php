@@ -13,7 +13,7 @@ class CsvSourceLoader
 	/**
 	 *
 	 */
-	public function materialize(PDO $source, Mapping $mapping)
+	public function materialize(PDO $database, Mapping $mapping)
 	{
 		$config = $mapping->getCsvConfig() ?: [];
 
@@ -59,10 +59,11 @@ class CsvSourceLoader
 			));
 		}
 
-		$table = $this->buildTableName($mapping, $config);
+		$driver = $this->getDriverName($database);
+		$table  = $this->buildTableName($mapping, $config, $driver);
 
-		$this->createTable($source, $table, $columns);
-		$this->insertRows($source, $table, array_keys($columns), $handle, $config);
+		$this->createTable($database, $table, $columns, $driver);
+		$this->insertRows($database, $table, array_keys($columns), $handle, $config);
 
 		fclose($handle);
 
@@ -89,14 +90,23 @@ class CsvSourceLoader
 	/**
 	 *
 	 */
-	protected function buildTableName(Mapping $mapping, array $config)
+	protected function buildTableName(Mapping $mapping, array $config, $driver)
 	{
 		if (!empty($config['table'])) {
-			return $this->sanitizeIdentifier($config['table']);
+			$table = trim($config['table']);
+
+			if ($this->isSqlServerDriver($driver) && substr($table, 0, 1) === '#') {
+				return '#' . $this->sanitizeIdentifier(substr($table, 1));
+			}
+
+			return $this->sanitizeIdentifier($table);
 		}
 
+		$prefix = $this->isSqlServerDriver($driver) ? '#' : '';
+
 		return sprintf(
-			'devour_csv_%s_%s',
+			'%sdevour_csv_%s_%s',
+			$prefix,
 			$this->sanitizeIdentifier($mapping->getDestination()),
 			substr(md5(uniqid('', TRUE)), 0, 8)
 		);
@@ -106,20 +116,25 @@ class CsvSourceLoader
 	/**
 	 *
 	 */
-	protected function createTable(PDO $source, $table, array $columns)
+	protected function createTable(PDO $database, $table, array $columns, $driver)
 	{
-		$source->query(sprintf('DROP TABLE IF EXISTS %s', $table));
+		if ($this->isSqlServerDriver($driver) && substr($table, 0, 1) === '#') {
+			$database->query(sprintf("IF OBJECT_ID('tempdb..%s') IS NOT NULL DROP TABLE %s", $table, $table));
+		} else {
+			$database->query(sprintf('DROP TABLE IF EXISTS %s', $table));
+		}
 
 		$column_chunks = [];
 		foreach ($columns as $column => $type) {
-			$column_chunks[] = sprintf('%s %s', $column, $type);
+			$column_chunks[] = sprintf('%s %s', $column, $this->normalizeColumnType($type, $driver));
 		}
 
-		$source->query(sprintf(
-			'CREATE TEMPORARY TABLE %s (%s)',
-			$table,
-			join(', ', $column_chunks)
-		));
+		$create_query = 'CREATE TEMPORARY TABLE %s (%s)';
+		if ($this->isSqlServerDriver($driver)) {
+			$create_query = 'CREATE TABLE %s (%s)';
+		}
+
+		$database->query(sprintf($create_query, $table, join(', ', $column_chunks)));
 	}
 
 
@@ -185,6 +200,53 @@ class CsvSourceLoader
 		}
 
 		return $normalized;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function normalizeColumnType($type, $driver)
+	{
+		$type = trim(strtolower((string) $type));
+
+		if ($this->isSqlServerDriver($driver) && $type === 'text') {
+			return 'nvarchar(max)';
+		}
+
+		return $type;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function getDriverName(PDO $database)
+	{
+		$driver = (string) $database->getAttribute(PDO::ATTR_DRIVER_NAME);
+
+		if ($driver === 'odbc') {
+			try {
+				$statement = $database->query('SELECT @@VERSION as version');
+				$version   = $statement ? (string) $statement->fetchColumn() : '';
+				if (stripos($version, 'microsoft sql server') !== FALSE) {
+					return 'sqlsrv';
+				}
+			} catch (\Exception $e) {
+				return $driver;
+			}
+		}
+
+		return $driver;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function isSqlServerDriver($driver)
+	{
+		return in_array($driver, ['sqlsrv', 'dblib']);
 	}
 
 

@@ -1135,8 +1135,10 @@ class Synchronizer
 	protected function syncMappingTemporary(Mapping $mapping, $ids = array())
 	{
 		$source_select_query = $mapping->composeSourceSelectQuery($ids);
+		$query_database      = $mapping->isCsvSource() ? $this->destination : $this->source;
+		$query_location      = $mapping->isCsvSource() ? 'destination' : 'source';
 		try {
-			$source_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
+			$source_results = $query_database->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			$generated      = array_keys($mapping->getGenerators());
 
 			$this->log(sprintf('...transfering %s temporary records', count($source_results)));
@@ -1178,7 +1180,8 @@ class Synchronizer
 			}
 		} catch (\Exception $e) {
 			$this->log(sprintf(
-				"Failed selecting transfer results with query: %s  The database returned: %s",
+				"Failed selecting transfer results from %s database with query: %s  The database returned: %s",
+				$query_location,
 				$source_select_query,
 				$e->getMessage()
 			));
@@ -1326,7 +1329,7 @@ class Synchronizer
 		$config = $mapping->getCsvConfig();
 		$alias  = $config['alias'] ?? 'csvsrc';
 
-		$table = $this->getCsvSourceLoader()->materialize($this->source, $mapping);
+		$table = $this->getCsvSourceLoader()->materialize($this->destination, $mapping);
 		$source = sprintf('%s %s', $table, $alias);
 
 		$mapping->setSource($source);
