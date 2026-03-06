@@ -4,7 +4,13 @@ use PHPUnit\Framework\TestCase;
 
 final class MappingTest extends TestCase
 {
-	public function setUp(): void
+	protected $parser;
+
+	protected $config;
+
+	protected $mapping;
+
+	protected function setUp(): void
 	{
 		$this->parser = new Dotink\Jin\Parser();
 		$this->config = $this->parser->parse(file_get_contents(__DIR__ . '/../config/Example.jin'));
@@ -25,15 +31,15 @@ final class MappingTest extends TestCase
 		}
 
 		foreach ($this->config->get('devour.map.require', []) as $requirement) {
-			$this->mapping->addRequirement($requirement);
+			$this->mapping->addDependency($requirement);
 		}
 
 		foreach ($this->config->get('devour.map.updateWheres', []) as $condition) {
-			$this->mapping->addWhere($condition, TRUE);
+			$this->mapping->addUpdateWhere($condition);
 		}
 
 		foreach ($this->config->get('devour.map.wheres', []) as $condition) {
-			$this->mapping->addWhere($condition, FALSE);
+			$this->mapping->addWhere($condition);
 		}
 
 		foreach ($this->config->get('devour.map.filters', []) as $field => $filters) {
@@ -56,7 +62,7 @@ final class MappingTest extends TestCase
 	{
 		$this->assertEquals(
 			$this->mapping->composeSourceExistingKeysQuery(),
-			"SELECT events.control as id FROM evmas events LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE TRUE"
+			"SELECT events.control as id FROM evmas evmas LEFT JOIN firms vendor ON events.vendr = vendor.firm LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE NULL IS NULL"
 		);
 	}
 
@@ -65,26 +71,26 @@ final class MappingTest extends TestCase
 		$this->mapping->addParam('last_synced', '2019-01-01');
 
 		$this->assertEquals(
-			$this->mapping->composeSourceUpdatedKeysQuery([1, 2, 3]),
-			"SELECT events.control as id FROM evmas events LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE events.adate >= '2019-01-01' AND events.udate >= '2019-01-01' AND id IN(1, 2, 3)"
+			$this->mapping->composeSourceUpdatedKeysQuery([['id' => 1], ['id' => 2], ['id' => 3]]),
+			"SELECT events.control as id FROM evmas evmas LEFT JOIN firms vendor ON events.vendr = vendor.firm LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE (events.adate >= '2019-01-01' OR events.udate >= '2019-01-01') AND (RTRIM(LTRIM(events.control)) = 1 OR RTRIM(LTRIM(events.control)) = 2 OR RTRIM(LTRIM(events.control)) = 3)"
 		);
 
 		$this->assertEquals(
-			$this->mapping->composeSourceUpdatedKeysQuery(['1', '2', '3']),
-			"SELECT events.control as id FROM evmas events LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE events.adate >= '2019-01-01' AND events.udate >= '2019-01-01' AND id IN('1', '2', '3')"
+			$this->mapping->composeSourceUpdatedKeysQuery([['id' => '1'], ['id' => '2'], ['id' => '3']]),
+			"SELECT events.control as id FROM evmas evmas LEFT JOIN firms vendor ON events.vendr = vendor.firm LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE (events.adate >= '2019-01-01' OR events.udate >= '2019-01-01') AND (RTRIM(LTRIM(events.control)) = '1' OR RTRIM(LTRIM(events.control)) = '2' OR RTRIM(LTRIM(events.control)) = '3')"
 		);
 	}
 
-	public function testDestinationDeleteQuery()
+	public function testSourceDeleteSelectQuery()
 	{
 		$this->assertEquals(
-			$this->mapping->composeDestinationDeleteQuery([1, 2, 3]),
-			"DELETE FROM events WHERE id IN(1, 2, 3)"
+			$this->mapping->composeSourceDeleteSelectQuery([['id' => 1], ['id' => 2], ['id' => 3]]),
+			"SELECT events.* from devour_temp_events RIGHT OUTER JOIN events ON (devour_temp_events.id = events.id) WHERE devour_temp_events.id IS NULL AND (events.id = 1 OR events.id = 2 OR events.id = 3)"
 		);
 
 		$this->assertEquals(
-			$this->mapping->composeDestinationDeleteQuery(['1', '2', '3']),
-			"DELETE FROM events WHERE id IN('1', '2', '3')"
+			$this->mapping->composeSourceDeleteSelectQuery([['id' => '1'], ['id' => '2'], ['id' => '3']]),
+			"SELECT events.* from devour_temp_events RIGHT OUTER JOIN events ON (devour_temp_events.id = events.id) WHERE devour_temp_events.id IS NULL AND (events.id = '1' OR events.id = '2' OR events.id = '3')"
 		);
 	}
 
@@ -99,8 +105,8 @@ final class MappingTest extends TestCase
 	public function testSourceSelectQuery()
 	{
 		$this->assertEquals(
-			$this->mapping->composeSourceSelectQuery([1, 2, 3]),
-			"SELECT events.control as id, events.code1 as code, (RTRIM(LTRIM(events.emtitle1)) + ' ' + RTRIM(LTRIM(events.emtitle2))) as title, vendor.firm as vendor, location.firm as location, facilitator.id as facilitator, events.markdesc as description, events.ss as status, events.begdate as start_date, events.begtime as start_time, events.enddate as end_date, events.endtime as end_time, events.timezone as timezone FROM evmas events LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE id IN(1, 2, 3)"
+			$this->mapping->composeSourceSelectQuery([['id' => 1], ['id' => 2], ['id' => 3]]),
+			"SELECT events.control as id, events.code1 as code, (RTRIM(LTRIM(events.emtitle1)) + ' ' + RTRIM(LTRIM(events.emtitle2))) as title, vendor.firm as vendor, location.firm as location, facilitator.id as facilitator, events.markdesc as description, events.ss as status, events.begdate as start_date, events.begtime as start_time, events.enddate as end_date, events.endtime as end_time, events.timezone as timezone FROM evmas evmas LEFT JOIN firms vendor ON events.vendr = vendor.firm LEFT JOIN firms location ON events.fac = location.firm LEFT JOIN names facilitator ON events.admin = facilitator.id WHERE NULL IS NULL AND (RTRIM(LTRIM(events.control)) = 1 OR RTRIM(LTRIM(events.control)) = 2 OR RTRIM(LTRIM(events.control)) = 3)"
 		);
 	}
 }
