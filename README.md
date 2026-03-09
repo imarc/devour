@@ -70,7 +70,7 @@ Example `.jin` mapping for CSV imports (recommended `persistent = true`):
 	target = events
 	key    = id
 	source = csvsrc
-	persistent = true
+	persistent = true	; !!!IMPORTANT!!! without this, any rows now in the csv file will get deleted from the target table
 
 	fields = {
 		"id"         : "csvsrc.id",
