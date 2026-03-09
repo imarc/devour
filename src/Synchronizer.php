@@ -23,18 +23,6 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected $csvLoader = NULL;
-
-
-	/**
-	 *
-	 */
-	protected $csvMaterializedSources = [];
-
-
-	/**
-	 *
-	 */
 	protected $destination = NULL;
 
 
@@ -147,17 +135,6 @@ class Synchronizer
 	public function addGenerator($name, callable $generator)
 	{
 		$this->generators[$name] = $generator;
-	}
-
-
-	/**
-	 *
-	 */
-	public function setCsvSourceLoader(CsvSourceLoader $csv_loader)
-	{
-		$this->csvLoader = $csv_loader;
-
-		return $this;
 	}
 
 
@@ -952,7 +929,7 @@ class Synchronizer
 			$this->syncMapping($dependency, [], $force_update);
 		}
 
-		$this->prepareCsvSource($mapping);
+		$this->beforeSyncMapping($mapping);
 
 		if ($this->strictTime) {
 			$mapping->addParam('lastSynced', $this->updateGet($name));
@@ -1135,8 +1112,8 @@ class Synchronizer
 	protected function syncMappingTemporary(Mapping $mapping, $ids = array())
 	{
 		$source_select_query = $mapping->composeSourceSelectQuery($ids);
-		$query_database      = $mapping->isCsvSource() ? $this->destination : $this->source;
-		$query_location      = $mapping->isCsvSource() ? 'destination' : 'source';
+		$query_database      = $this->getTransferSelectDatabase($mapping);
+		$query_location      = $this->getTransferSelectDatabaseName($mapping);
 		try {
 			$source_results = $query_database->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			$generated      = array_keys($mapping->getGenerators());
@@ -1301,39 +1278,27 @@ class Synchronizer
 	/**
 	 *
 	 */
-	private function getCsvSourceLoader()
+	protected function beforeSyncMapping(Mapping $mapping)
 	{
-		if ($this->csvLoader === NULL) {
-			$this->csvLoader = new CsvSourceLoader();
-		}
-
-		return $this->csvLoader;
+		return;
 	}
 
 
 	/**
 	 *
 	 */
-	private function prepareCsvSource(Mapping $mapping)
+	protected function getTransferSelectDatabase(Mapping $mapping)
 	{
-		if (!$mapping->isCsvSource()) {
-			return;
-		}
+		return $this->source;
+	}
 
-		$destination = $mapping->getDestination();
-		if (isset($this->csvMaterializedSources[$destination])) {
-			$mapping->setSource($this->csvMaterializedSources[$destination]);
-			return;
-		}
 
-		$config = $mapping->getCsvConfig();
-		$alias  = $config['alias'] ?? 'csvsrc';
-
-		$table = $this->getCsvSourceLoader()->materialize($this->destination, $mapping);
-		$source = sprintf('%s %s', $table, $alias);
-
-		$mapping->setSource($source);
-		$this->csvMaterializedSources[$destination] = $source;
+	/**
+	 *
+	 */
+	protected function getTransferSelectDatabaseName(Mapping $mapping)
+	{
+		return 'source';
 	}
 
 
