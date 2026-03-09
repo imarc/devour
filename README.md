@@ -21,9 +21,11 @@ $sync->run('events')
 
 ## CSV Source Imports
 
-Mappings can now import rows from a CSV file while reusing the same mapping syntax (`fields`, `wheres`, `filters`, `updateWheres`, etc.).
+Use `Devour\Importer` for CSV workflows. It extends `Synchronizer`, uses a single database connection for both source and destination, and stages CSV data in the destination database.
 
 ```php
+$sync = new Devour\Importer($database);
+
 $mapping = new Devour\Mapping('placeholder', 'events', 'id');
 
 $mapping
@@ -61,9 +63,35 @@ $mapping->setCsvConfig([
 ]);
 ```
 
+Example `.jin` mapping for CSV imports (recommended `persistent = true`):
+
+```ini
+[devour.map]
+	target = events
+	key    = id
+	source = csvsrc
+	persistent = true
+
+	fields = {
+		"id"         : "csvsrc.id",
+		"title"      : "csvsrc.title",
+		"start_date" : "csvsrc.start_date"
+	}
+
+	[&.csv]
+		path      = env('EVENTS_CSV', '/path/to/events.csv')
+		header    = true
+		delimiter = ","
+		enclosure = "\""
+		escape    = "\\"
+		alias     = "csvsrc"
+```
+
 Notes:
 
 - CSV data is materialized into a temporary staging table on the destination database before synchronization.
-- Existing database-to-database mappings are unchanged.
+- Existing database-to-database syncing remains in `Synchronizer`.
 - You can optionally pass `columns` in `setCsvConfig()` to control temporary table column definitions.
 - CSV mapping joins execute on the destination database, so join targets must be destination-accessible tables.
+- IMPORTANT: set CSV mappings as persistent (`setPersistent(true)` in PHP or `persistent = true` in `.jin`) if you need to preserve existing destination rows not present in the CSV.
+- If `persistent` is not set, normal sync delete behavior can remove destination rows that do not appear in the current CSV import.
