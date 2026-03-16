@@ -40,7 +40,7 @@ class Mapping
 	/**
 	 *
 	 */
-	protected $csv = NULL;
+	protected $file = NULL;
 
 
 	/**
@@ -623,17 +623,12 @@ class Mapping
 	/**
 	 *
 	 */
-	public function setCsvConfig(array $config)
+	public function setFileConfig($type, array $config)
 	{
-		$this->csv = array_merge([
-			'header'    => TRUE,
-			'delimiter' => ',',
-			'enclosure' => '"',
-			'escape'    => '\\',
-			'table'     => NULL,
-			'columns'   => [],
-			'alias'     => 'csvsrc'
-		], $config);
+		$this->file = [
+			'type'   => $type,
+			'config' => $config
+		];
 
 		return $this;
 	}
@@ -642,18 +637,47 @@ class Mapping
 	/**
 	 *
 	 */
-	public function getCsvConfig()
+	public function getFileConfig($type = NULL)
 	{
-		return $this->csv;
+		if (!$this->isFileSource()) {
+			return NULL;
+		}
+
+		if ($type !== NULL && $this->file['type'] !== $type) {
+			return NULL;
+		}
+
+		return $this->file['config'];
 	}
 
 
 	/**
 	 *
 	 */
-	public function isCsvSource()
+	public function getFileType()
 	{
-		return is_array($this->csv) && !empty($this->csv['path']);
+		if (!$this->isFileSource()) {
+			return NULL;
+		}
+
+		return $this->file['type'];
+	}
+
+
+	/**
+	 *
+	 */
+	public function isFileSource($type = NULL)
+	{
+		if (!is_array($this->file) || empty($this->file['type'])) {
+			return FALSE;
+		}
+
+		if ($type !== NULL && $this->file['type'] !== $type) {
+			return FALSE;
+		}
+
+		return !empty($this->file['config']['path']);
 	}
 
 
