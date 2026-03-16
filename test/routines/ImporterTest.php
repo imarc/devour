@@ -2,15 +2,26 @@
 
 use PHPUnit\Framework\TestCase;
 
-class TestCsvSourceLoader extends Devour\CsvSourceLoader
+class TestFileDriver implements Devour\FileDriver
 {
 	public $calls = 0;
+	public $supports = TRUE;
+
+	public function supports(Devour\Mapping $mapping)
+	{
+		return $this->supports;
+	}
+
+	public function getAlias(Devour\Mapping $mapping)
+	{
+		return 'filesrc';
+	}
 
 	public function materialize(PDO $database, Devour\Mapping $mapping)
 	{
 		$this->calls++;
 
-		return 'devour_csv_events_test';
+		return 'devour_file_events_test';
 	}
 }
 
@@ -35,6 +46,11 @@ class TestImporter extends Devour\Importer
 	{
 		return $this->getTransferSelectDatabaseName($mapping);
 	}
+
+	public function callFileDriverClass()
+	{
+		return get_class($this->getFileDriver());
+	}
 }
 
 final class ImporterTest extends TestCase
@@ -42,36 +58,56 @@ final class ImporterTest extends TestCase
 	public function testCsvMappingStagesOncePerDestination()
 	{
 		$database = new PDO('sqlite::memory:');
+		$driver   = new TestFileDriver();
 		$importer = new TestImporter($database);
-		$loader   = new TestCsvSourceLoader();
+		$importer->setFileDriver($driver);
 
 		$mapping = new Devour\Mapping('placeholder', 'events', 'id');
-		$mapping->setCsvConfig([
-			'path'  => '/tmp/events.csv',
-			'alias' => 'csvsrc'
+		$mapping->setFileConfig('stub', [
+			'path' => '/tmp/events.csv'
 		]);
 
-		$importer->setCsvSourceLoader($loader);
 		$importer->callBeforeSyncMapping($mapping);
 		$importer->callBeforeSyncMapping($mapping);
 
-		$this->assertEquals(1, $loader->calls);
-		$this->assertEquals('devour_csv_events_test csvsrc', $mapping->getSource());
+		$this->assertEquals(1, $driver->calls);
+		$this->assertEquals('devour_file_events_test filesrc', $mapping->getSource());
 	}
 
-	public function testCsvTransferSelectUsesDestinationName()
+	public function testFileTransferSelectUsesDestinationName()
 	{
 		$database = new PDO('sqlite::memory:');
+		$driver   = new TestFileDriver();
 		$importer = new TestImporter($database);
+		$importer->setFileDriver($driver);
 
-		$csv_mapping = new Devour\Mapping('placeholder', 'events', 'id');
-		$csv_mapping->setCsvConfig([
+		$file_mapping = new Devour\Mapping('placeholder', 'events', 'id');
+		$file_mapping->setFileConfig('stub', [
 			'path' => '/tmp/events.csv'
 		]);
 
 		$db_mapping = new Devour\Mapping('source_table', 'events', 'id');
+		$driver->supports = FALSE;
 
-		$this->assertEquals('destination', $importer->callTransferSelectDatabaseName($csv_mapping));
 		$this->assertEquals('source', $importer->callTransferSelectDatabaseName($db_mapping));
+
+		$driver->supports = TRUE;
+
+		$this->assertEquals('destination', $importer->callTransferSelectDatabaseName($file_mapping));
 	}
+
+	public function testRunCanSetDriverAtRuntime()
+	{
+		$database = new PDO('sqlite::memory:');
+		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
+		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TEXT)');
+
+		$importer = new TestImporter($database);
+		$driver   = new TestFileDriver();
+
+		$importer->runWithDriver($driver);
+
+		$this->assertEquals(TestFileDriver::class, $importer->callFileDriverClass());
+	}
+
 }

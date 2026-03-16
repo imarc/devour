@@ -2,7 +2,7 @@
 
 use PHPUnit\Framework\TestCase;
 
-final class CsvSourceLoaderTest extends TestCase
+final class CsvDriverTest extends TestCase
 {
 	public function testMaterializeCsvIntoTemporaryTable()
 	{
@@ -14,13 +14,13 @@ final class CsvSourceLoaderTest extends TestCase
 		$mapping
 			->addField('id', 'csvsrc.id')
 			->addField('title', 'csvsrc.title')
-			->setCsvConfig([
+			->setFileConfig('csv', [
 				'path'   => $path,
 				'header' => TRUE,
 				'alias'  => 'csvsrc'
 			]);
 
-		$loader = new Devour\CsvSourceLoader();
+		$loader = new Devour\CsvDriver();
 		$table  = $loader->materialize($database, $mapping);
 
 		$count = (int) $database->query("SELECT COUNT(*) FROM $table")->fetchColumn();
