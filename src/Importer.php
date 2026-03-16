@@ -12,13 +12,13 @@ class Importer extends Synchronizer
 	/**
 	 *
 	 */
-	protected $csvLoader = NULL;
+	protected $fileDriver = NULL;
 
 
 	/**
 	 *
 	 */
-	protected $csvMaterializedSources = [];
+	protected $fileMaterializedSources = [];
 
 
 	/**
@@ -27,15 +27,17 @@ class Importer extends Synchronizer
 	public function __construct(PDO $database, $strict_time = FALSE, $chunk_limit = 5000)
 	{
 		parent::__construct($database, $database, $strict_time, $chunk_limit);
+
+		$this->fileDriver = new CsvDriver();
 	}
 
 
 	/**
 	 *
 	 */
-	public function setCsvSourceLoader(CsvSourceLoader $csv_loader)
+	public function setFileDriver(FileDriver $file_driver)
 	{
-		$this->csvLoader = $csv_loader;
+		$this->fileDriver = $file_driver;
 
 		return $this;
 	}
@@ -44,9 +46,31 @@ class Importer extends Synchronizer
 	/**
 	 *
 	 */
+	public function run(array $mappings = array(), $ids = array(), $force_update = FALSE): array
+	{
+		$this->fileMaterializedSources = [];
+
+		return parent::run($mappings, $ids, $force_update);
+	}
+
+
+	/**
+	 *
+	 */
+	public function runWithDriver(FileDriver $file_driver, array $mappings = array(), $ids = array(), $force_update = FALSE): array
+	{
+		$this->setFileDriver($file_driver);
+
+		return $this->run($mappings, $ids, $force_update);
+	}
+
+
+	/**
+	 *
+	 */
 	protected function beforeSyncMapping(Mapping $mapping)
 	{
-		$this->prepareCsvSource($mapping);
+		$this->prepareFileSource($mapping);
 	}
 
 
@@ -55,7 +79,7 @@ class Importer extends Synchronizer
 	 */
 	protected function getTransferSelectDatabase(Mapping $mapping)
 	{
-		if ($mapping->isCsvSource()) {
+		if ($this->isFileMapping($mapping)) {
 			return $this->destination;
 		}
 
@@ -68,7 +92,7 @@ class Importer extends Synchronizer
 	 */
 	protected function getTransferSelectDatabaseName(Mapping $mapping)
 	{
-		if ($mapping->isCsvSource()) {
+		if ($this->isFileMapping($mapping)) {
 			return 'destination';
 		}
 
@@ -79,38 +103,46 @@ class Importer extends Synchronizer
 	/**
 	 *
 	 */
-	protected function getCsvSourceLoader()
+	protected function getFileDriver()
 	{
-		if ($this->csvLoader === NULL) {
-			$this->csvLoader = new CsvSourceLoader();
+		if ($this->fileDriver === NULL) {
+			$this->fileDriver = new CsvDriver();
 		}
 
-		return $this->csvLoader;
+		return $this->fileDriver;
 	}
 
 
 	/**
 	 *
 	 */
-	protected function prepareCsvSource(Mapping $mapping)
+	protected function prepareFileSource(Mapping $mapping)
 	{
-		if (!$mapping->isCsvSource()) {
+		if (!$this->isFileMapping($mapping)) {
 			return;
 		}
 
 		$destination = $mapping->getDestination();
-		if (isset($this->csvMaterializedSources[$destination])) {
-			$mapping->setSource($this->csvMaterializedSources[$destination]);
+		if (isset($this->fileMaterializedSources[$destination])) {
+			$mapping->setSource($this->fileMaterializedSources[$destination]);
 			return;
 		}
 
-		$config = $mapping->getCsvConfig();
-		$alias  = $config['alias'] ?? 'csvsrc';
+		$alias = $this->getFileDriver()->getAlias($mapping);
 
-		$table = $this->getCsvSourceLoader()->materialize($this->destination, $mapping);
+		$table = $this->getFileDriver()->materialize($this->destination, $mapping);
 		$source = sprintf('%s %s', $table, $alias);
 
 		$mapping->setSource($source);
-		$this->csvMaterializedSources[$destination] = $source;
+		$this->fileMaterializedSources[$destination] = $source;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function isFileMapping(Mapping $mapping)
+	{
+		return $this->getFileDriver()->supports($mapping);
 	}
 }
