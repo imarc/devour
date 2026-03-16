@@ -21,7 +21,7 @@ $sync->run('events')
 
 ## CSV Source Imports
 
-Use `Devour\Importer` for CSV workflows. It extends `Synchronizer`, uses a single database connection for both source and destination, and stages CSV data in the destination database.
+Use `Devour\Importer` for file workflows. It extends `Synchronizer`, uses a single database connection for both source and destination, and stages file data in the destination database through a pluggable file driver.
 
 ```php
 $sync = new Devour\Importer($database);
@@ -29,7 +29,7 @@ $sync = new Devour\Importer($database);
 $mapping = new Devour\Mapping('placeholder', 'events', 'id');
 
 $mapping
-	->setCsvConfig([
+	->setFileConfig('csv', [
 		'path'      => '/path/to/events.csv',
 		'header'    => true,
 		'delimiter' => ',',
@@ -44,13 +44,13 @@ $mapping
 ;
 
 $sync->addMapping($mapping);
-$sync->run(['events']);
+$sync->runWithDriver(new Devour\CsvDriver(), ['events']);
 ```
 
 Example with explicit `columns` definitions:
 
 ```php
-$mapping->setCsvConfig([
+$mapping->setFileConfig('csv', [
 	'path'      => '/path/to/events.csv',
 	'header'    => true,
 	'alias'     => 'csvsrc',
@@ -70,7 +70,7 @@ Example `.jin` mapping for CSV imports (recommended `persistent = true`):
 	target = events
 	key    = id
 	source = csvsrc
-	persistent = true	; !!!IMPORTANT!!! without this, any rows now in the csv file will get deleted from the target table
+	persistent = true
 
 	fields = {
 		"id"         : "csvsrc.id",
@@ -87,11 +87,14 @@ Example `.jin` mapping for CSV imports (recommended `persistent = true`):
 		alias     = "csvsrc"
 ```
 
+Custom file drivers can implement `Devour\FileDriver` and be passed to `Devour\Importer::runWithDriver()` in place of `Devour\CsvDriver`.
+
 Notes:
 
 - CSV data is materialized into a temporary staging table on the destination database before synchronization.
-- Existing database-to-database syncing remains in `Synchronizer`.
-- You can optionally pass `columns` in `setCsvConfig()` to control temporary table column definitions.
+- `Importer` accepts a generic file driver at runtime via `runWithDriver(FileDriver $driver, ...)`; `CsvDriver` is the default implementation for CSV imports.
+- `Mapping` is file-driver agnostic; provide file settings with `setFileConfig('<type>', [...])`.
+- For CSV imports, you can optionally pass `columns` in `setFileConfig('csv', ...)` to control temporary table column definitions.
 - CSV mapping joins execute on the destination database, so join targets must be destination-accessible tables.
 - IMPORTANT: set CSV mappings as persistent (`setPersistent(true)` in PHP or `persistent = true` in `.jin`) if you need to preserve existing destination rows not present in the CSV.
-- If `persistent` is not set, normal sync delete behavior can remove destination rows that do not appear in the current CSV import.
+	- If `persistent` is not set, normal sync delete behavior can remove destination rows that do not appear in the current CSV import.
