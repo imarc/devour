@@ -199,29 +199,74 @@ class Synchronizer
 
 
 	/**
-	 *
+	 * 
 	 */
-	public function getHighSyncInterval(): ?int
+	public function getContext(): string
 	{
 		$result = $this->destination->query("
 			SELECT
-				MAX(end_time - start_time) as interval
+				ids, tables, force
 			FROM
 				devour_stats
+			WHERE
+				end_time IS NULL
+			LIMIT 1
 		");
 
 		if (!$result->rowCount()) {
 			return NULL;
 		}
 
-		return strtotime($result->fetch(PDO::FETCH_ASSOC)['interval']) - strtotime('00:00:00');
+		$data = $result->fetch(PDO::FETCH_ASSOC);
+
+		if ($data['ids']) {
+			return 'individual';
+		}
+
+		if ($data['tables']) {
+			return 'limited';
+		}
+
+		return NULL;
 	}
 
 
 	/**
 	 *
 	 */
-	public function getCompletionTime(): ?int
+	public function getSyncInterval($context = NULL, $mode = 'high'): ?int
+	{
+		$wheres = match ($context) {
+			'individual' => 'WHERE tables is not null and ids is not null',
+			'limited'    => 'WHERE tables is not null and ids is null',
+			default      => 'WHERE tables is null and ids is null'
+		};
+
+		$select = match ($mode) {
+			'high' => 'MAX(end_time - start_time) as result',
+			'average' => 'AVG(end_time - start_time) as result'
+		};
+
+		$result = $this->destination->query(sprintf("
+			SELECT
+				%s
+			FROM
+				devour_stats
+			%s
+		", $select, $wheres));
+
+		if (!$result->rowCount()) {
+			return NULL;
+		}
+
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['result']) - strtotime('00:00:00');
+	}
+
+
+	/**
+	 *
+	 */
+	public function getCompletionTime($context = NULL): ?int
 	{
 		$result = $this->destination->query("
 			SELECT
@@ -237,7 +282,7 @@ class Synchronizer
 			return NULL;
 		}
 
-		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']) + $this->getHighSyncInterval();
+		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']) + $this->getSyncInterval($context);
 	}
 
 	/**
@@ -885,6 +930,54 @@ class Synchronizer
 
 
 	/**
+	 * 
+	 */
+	protected function unsynced($name, $ids = null)
+	{
+		if ($ids) {
+			if (is_array($this->synced[$name])) {
+				$synced = array_column($this->synced[$name], 'id');
+				$synced = array_fill_keys($synced, true);
+
+				return array_filter($ids, function ($item) use ($synced) {
+					return !isset($synced[$item['id']]);
+				});
+
+			} elseif ($this->synced[$name]) {
+				return FALSE;
+
+			} else {
+				return $ids;
+			}
+		}
+
+		if ($this->synced[$name]) {
+			return FALSE;
+		}
+
+		return TRUE;
+	}
+
+
+	/**
+	 * 
+	 */
+	protected function isQueued($name, $ids = null)
+	{
+		return in_array($name, $this->stack);
+	}
+
+
+	/**
+	 * 
+	 */
+	protected function queue($name, $ids = null)
+	{
+		array_push($this->stack, $name);
+	}
+
+
+	/**
 	 *
 	 */
 	protected function log($message)
@@ -899,7 +992,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function syncMapping($name, $ids, $force_update)
+	protected function syncMapping($name, $ids, $force_update, $context = NULL)
 	{
 		if (!isset($this->mappings[$name])) {
 			throw new RuntimeException(sprintf(
@@ -910,23 +1003,69 @@ class Synchronizer
 
 		$mapping = $this->mappings[$name];
 
-		if ($this->synced[$name]) {
+		//
+		// Check if the current mapping is already synced
+		//
+
+		if (!($unsynced = $this->unsynced($name, $ids))) {
 			return TRUE;
 		}
 
-		if (in_array($name, $this->stack)) {
+		if (is_array($unsynced)) {
+			$ids = $unsynced;
+		}
+
+		//
+		// Check if the current mapping is already queued
+		//
+
+		if (!$ids && $this->isQueued($name)) {
 			throw new RuntimeException(sprintf(
 				'Cannot sync "%s", already queued for sync - check for circular dependency',
 				$name
 			));
 		}
 
-		array_push($this->stack, $name);
+		$this->queue($name);
 
 		//
+		// Handle dependencies
+		//
+
 
 		foreach ($mapping->getDependencies() as $dependency) {
-			$this->syncMapping($dependency, [], $force_update);
+
+			// Backwards compatibility
+			if (is_array($dependency)) {
+				$dependency_table = $dependency['table'];
+			} else {
+				$dependency_table = $dependency;
+			}
+
+			// Sync everything
+
+			if (empty($ids)) {
+				$this->syncMapping($dependency_table, [], $force_update, Mapping::CONTEXT_DEPENDENCY);
+
+			} else {
+				$key_query = $mapping->composeSourceDependencyKeyQuery($this->mappings[$dependency_table], $ids);
+				if ($key_query) {
+					$keys = $this->source->query($key_query)->fetchAll();
+
+					//
+					// Don't need to sync if there's no keys
+					//
+
+					if ($keys) {
+						$this->syncMapping($dependency_table, $keys, $force_update, Mapping::CONTEXT_DEPENDENCY);
+					}
+
+				// If there's no key mapping, just sync everything
+				} else {
+					$this->syncMapping($dependency_table, [], $force_update);
+				}
+
+			}
 		}
 
 		if ($this->strictTime) {
@@ -970,9 +1109,16 @@ class Synchronizer
 
 		$this->updateSet($name, $start_sync_time);
 
-		$this->synced[array_pop($this->stack)] = TRUE;
-
 		if ($ids) {
+			$this->synced[array_pop($this->stack)] = $ids;
+		} else {
+			$this->synced[array_pop($this->stack)] = TRUE;
+		}
+
+		//
+		// This is exclusively for subsets, but we don't want to chain sub-items
+		//
+		if ($ids && !$context) {
 			foreach ($mapping->getAdjuncts() as $adjunct => $config) {
 				$adjunct   = $this->mappings[$adjunct];
 				$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
@@ -980,7 +1126,9 @@ class Synchronizer
 
 				$keys = $this->filterKeys($adjunct, $keys, 'select');
 
-				$this->syncMapping($adjunct->getDestination(), $keys, $force_update);
+				if ($keys) {
+					$this->syncMapping($adjunct->getDestination(), $keys, $force_update, Mapping::CONTEXT_ADJUNCT);
+				}
 			}
 		}
 	}
