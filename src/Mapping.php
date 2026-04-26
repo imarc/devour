@@ -10,6 +10,18 @@ class Mapping
 	/**
 	 * 
 	 */
+	public const CONTEXT_ADJUNCT = 2;
+
+
+	/**
+	 * 
+	 */
+	public const CONTEXT_DEPENDENCY = 4;
+
+
+	/**
+	 * 
+	 */
 	protected $adjuncts = array();
 
 	
@@ -289,6 +301,40 @@ class Mapping
 			join(' OR ', array_map(function($id) use ($keys) {
 				return sprintf("RTRIM(LTRIM(%s)) = '%s'", $keys['source'], $id[$this->key[0]]);
 			}, $ids))
+		);
+
+		return $sql;
+	}
+
+
+	/**
+	 * 
+	 */
+	public function composeSourceDependencyKeyQuery(Mapping $dependency, $ids)
+	{
+		$table = $dependency->getDestination();
+		$key   = null;
+
+		foreach ($this->dependencies as $dep) {
+			if (is_array($dep) && $dep['table'] == $table) {
+				$key = $dep;
+				break;
+			}
+		}
+
+		if (!$key) {
+			return NULL;
+		}
+
+		$sql = $this->compose('SELECT %s FROM %s %s WHERE %s',
+			$dependency->makeSourceKey(),
+			$dependency->makeSourceFrom(),
+			sprintf('INNER JOIN (%s) dep on %s = dep.%s',
+				$this->composeSourceSelectQuery($ids),
+				$key['source'],
+				$key['key']
+			),
+			$dependency->makeSourceWheres()
 		);
 
 		return $sql;
