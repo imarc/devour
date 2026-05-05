@@ -52,6 +52,12 @@ class Mapping
 	/**
 	 *
 	 */
+	protected $file = NULL;
+
+
+	/**
+	 *
+	 */
 	protected $fields = array();
 
 
@@ -558,9 +564,27 @@ class Mapping
 	/**
 	 *
 	 */
+	public function getFields()
+	{
+		return $this->fields;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getKey()
 	{
 		return $this->key;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getSource()
+	{
+		return $this->source;
 	}
 
 
@@ -638,6 +662,78 @@ class Mapping
 	public function setImmutable($value)
 	{
 		$this->immutable = $value;
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function setFileConfig($type, array $config)
+	{
+		$this->file = [
+			'type'   => $type,
+			'config' => $config
+		];
+
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getFileConfig($type = NULL)
+	{
+		if (!$this->isFileSource()) {
+			return NULL;
+		}
+
+		if ($type !== NULL && $this->file['type'] !== $type) {
+			return NULL;
+		}
+
+		return $this->file['config'];
+	}
+
+
+	/**
+	 *
+	 */
+	public function getFileType()
+	{
+		if (!$this->isFileSource()) {
+			return NULL;
+		}
+
+		return $this->file['type'];
+	}
+
+
+	/**
+	 *
+	 */
+	public function isFileSource($type = NULL)
+	{
+		if (!is_array($this->file) || empty($this->file['type'])) {
+			return FALSE;
+		}
+
+		if ($type !== NULL && $this->file['type'] !== $type) {
+			return FALSE;
+		}
+
+		return !empty($this->file['config']['path']);
+	}
+
+
+	/**
+	 *
+	 */
+	public function setSource($source)
+	{
+		$this->source = $source;
+
 		return $this;
 	}
 

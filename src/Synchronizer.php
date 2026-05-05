@@ -1068,6 +1068,8 @@ class Synchronizer
 			}
 		}
 
+		$this->beforeSyncMapping($mapping);
+
 		if ($this->strictTime) {
 			$mapping->addParam('lastSynced', $this->updateGet($name));
 		} else {
@@ -1258,8 +1260,10 @@ class Synchronizer
 	protected function syncMappingTemporary(Mapping $mapping, $ids = array())
 	{
 		$source_select_query = $mapping->composeSourceSelectQuery($ids);
+		$query_database      = $this->getTransferSelectDatabase($mapping);
+		$query_location      = $this->getTransferSelectDatabaseName($mapping);
 		try {
-			$source_results = $this->source->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
+			$source_results = $query_database->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			$generated      = array_keys($mapping->getGenerators());
 
 			$this->log(sprintf('...transfering %s temporary records', count($source_results)));
@@ -1301,7 +1305,8 @@ class Synchronizer
 			}
 		} catch (\Exception $e) {
 			$this->log(sprintf(
-				"Failed selecting transfer results with query: %s  The database returned: %s",
+				"Failed selecting transfer results from %s database with query: %s  The database returned: %s",
+				$query_location,
 				$source_select_query,
 				$e->getMessage()
 			));
@@ -1415,6 +1420,33 @@ class Synchronizer
 		} else {
 			return PDO::PARAM_STR;
 		}
+	}
+
+
+	/**
+	 *
+	 */
+	protected function beforeSyncMapping(Mapping $mapping)
+	{
+		return;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function getTransferSelectDatabase(Mapping $mapping)
+	{
+		return $this->source;
+	}
+
+
+	/**
+	 *
+	 */
+	protected function getTransferSelectDatabaseName(Mapping $mapping)
+	{
+		return 'source';
 	}
 
 
