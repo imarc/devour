@@ -201,7 +201,7 @@ class Synchronizer
 	/**
 	 * 
 	 */
-	public function getContext(): string
+	public function getContext(): ?string
 	{
 		$result = $this->destination->query("
 			SELECT
