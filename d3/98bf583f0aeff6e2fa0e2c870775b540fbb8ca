@@ -1,0 +1,23 @@
+test/routines/SynchronizerTest.php
+  s_6e457336a6782f::t_1faf83450c9b0b 1-46
+src/Synchronizer.php
+  s_6e457336a6782f::t_52bbc402032d86 552-571,576
+  s_6e457336a6782f::t_7e790d8fac160a 686
+  s_6e457336a6782f::t_7ffea9d09ad686 511,527
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d398bf583f0aeff6e2fa0e2c870775b540fbb8ca",
+  "prompts": {},
+  "sessions": {
+    "s_6e457336a6782f": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "782ffe16-d6cc-48f6-a7e5-a45ffcd277f3",
+        "model": "composer-2.5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
