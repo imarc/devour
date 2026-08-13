@@ -508,7 +508,7 @@ class Synchronizer
 	/**
 	 *
 	 */
-	public function schedule(array $mappings = array(), array $ids = array(), $scheduled_by = NULL): array
+	public function schedule(array $mappings = array(), array $ids = array(), $scheduled_by = NULL, $force_update = FALSE): array
 	{
 		$this->stat();
 
@@ -524,6 +524,7 @@ class Synchronizer
 		$this->statSet('scheduled_by', $scheduled_by);
 		$this->statSet('scheduled_time', date('Y-m-d H:i:s'));
 		$this->statSet('tables', json_encode($mappings));
+		$this->statSet('force', $force_update ? '1' : '0');
 		if (count($mappings) == 1) {
 			$this->statSet('ids', json_encode($ids));
 		}
@@ -548,11 +549,31 @@ class Synchronizer
 			);
 
 		} else {
+			if (!count($mappings) && ($tables = $this->statGet('tables'))) {
+				$decoded = json_decode($tables, TRUE);
+
+				if (is_array($decoded) && count($decoded)) {
+					$mappings = $decoded;
+				}
+			}
+
+			if (!count($ids) && ($stored_ids = $this->statGet('ids'))) {
+				$decoded = json_decode($stored_ids, TRUE);
+
+				if (is_array($decoded)) {
+					$ids = $decoded;
+				}
+			}
+
+			if (!$force_update && ($force = $this->statGet('force'))) {
+				$force_update = (bool) $force;
+			}
+
 			if (!empty($this->pruneStatsWhere)) {
 				$this->pruneStats();
 			}
 			$this->statSet('start_time', date('Y-m-d H:i:s'));
-			$this->statSet('force', $force_update ? 1 : 0);
+			$this->statSet('force', $force_update ? '1' : '0');
 
 			if (function_exists('pcntl_signal')) {
 
@@ -652,8 +673,6 @@ class Synchronizer
 			$this->stat['id'] = $this->destination->lastInsertId();
 
 		} else {
-			// TODO: Need to get force working, look into bind parameter types
-			unset($this->stat['force']);
 			$update_statement = $this->destination->prepare("
 				UPDATE 
 					devour_stats 
@@ -664,7 +683,7 @@ class Synchronizer
 					end_time = :end_time, 
 					tables = :tables, 
 					ids = :ids,
-					force = false,
+					force = :force,
 					log = :log 
 				WHERE 
 					id = :id
