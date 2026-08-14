@@ -1,0 +1,52 @@
+test/routines/ImporterTest.php
+  s_1027789b70df6b::t_1d12c143b41e38 30-34
+src/Synchronizer.php
+  s_1027789b70df6b::t_c048921bceb0bf 9-10,96,141,150-156
+test/integration/MigrationRunnerIntegrationTest.php
+  s_1027789b70df6b::t_2dc2633e86f93a 73-85
+  s_1027789b70df6b::t_0cfe2f03f96c7b 1-72,86-99
+src/Migrations/MigrationRunner.php
+  s_1027789b70df6b::t_7434f7f1808ddc 1-6,10-11,247
+  s_1027789b70df6b::t_4325228476c6cf 7,9,12-23,26,29-40,42-44,48,58-85,87-246
+  s_1027789b70df6b::t_59e6911b662fab 8,86
+  s_1027789b70df6b::t_1d63357cc61511 24-25,27-28,45-47,49-57
+  s_1027789b70df6b::t_0a7c5d1832e7a8 41
+test/routines/MigrationRunnerTest.php
+  s_1027789b70df6b::t_a4f6848e95b2db 15,17
+  s_1027789b70df6b::t_16624ec7ce787a 13-14,16,18-32
+  s_1027789b70df6b::t_566d0ad55e21c7 44-65
+  s_1027789b70df6b::t_1d12c143b41e38 33-43
+  s_1027789b70df6b::t_49ffeb49c88d59 66-77
+  s_1027789b70df6b::t_e07084bbdc3258 1-12,78
+src/Services/Analyzer.php
+  s_1027789b70df6b::t_9399bef311cec5 57-61
+  s_1027789b70df6b::t_c048921bceb0bf 9,68
+src/Migrations/MigrationException.php
+  s_1027789b70df6b::t_7434f7f1808ddc 1-9
+README.md
+  s_1027789b70df6b::t_a20b498b27077d 22-31
+src/Migrations/Versions/Migration001.php
+  s_1027789b70df6b::t_0917251d214a26 1
+  s_1027789b70df6b::t_59e6911b662fab 2-142
+src/Migrations/Migration.php
+  s_1027789b70df6b::t_0a7c5d1832e7a8 13
+  s_1027789b70df6b::t_7434f7f1808ddc 1-12,14
+test/routines/SynchronizerTest.php
+  s_1027789b70df6b::t_1d12c143b41e38 5-11,20,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f5884043715207117d37c728c0d3b391331a9466",
+  "prompts": {},
+  "sessions": {
+    "s_1027789b70df6b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0034eab22ffe0NBRYD6c5Fqrxp",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
