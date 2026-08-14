@@ -43,4 +43,39 @@ final class SynchronizerTest extends TestCase
 		$this->assertSame('events', $sync->calls[0]['name']);
 		$this->assertTrue($sync->calls[0]['force_update']);
 	}
+
+
+	public function testStatUpdateNormalizesFalseForce(): void
+	{
+		$database = new PDO('sqlite::memory:');
+		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
+		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
+		$database->exec("INSERT INTO devour_stats VALUES (1, NULL, NULL, '2026-08-14 00:00:00', NULL, NULL, NULL, 0, NULL)");
+
+		$sync = new class($database, $database) extends Devour\Synchronizer {
+			public function setStat(array $stat): void
+			{
+				$this->stat = $stat;
+			}
+
+			public function updateStat(string $column, string $value): void
+			{
+				$this->statSet($column, $value);
+			}
+		};
+		$sync->setStat([
+			'id' => 1,
+			'start_time' => NULL,
+			'scheduled_by' => NULL,
+			'scheduled_time' => '2026-08-14 00:00:00',
+			'end_time' => NULL,
+			'tables' => NULL,
+			'ids' => NULL,
+			'force' => FALSE,
+			'log' => NULL
+		]);
+		$sync->updateStat('log', 'Updated');
+
+		$this->assertSame(0, $database->query('SELECT force FROM devour_stats WHERE id = 1')->fetchColumn());
+	}
 }

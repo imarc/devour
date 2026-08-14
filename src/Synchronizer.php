@@ -656,6 +656,9 @@ class Synchronizer
 	public function statSet(string $column, string $value): void
 	{
 		$this->stat[$column] = $value;
+		if (is_bool($this->stat['force'])) {
+			$this->stat['force'] = $this->stat['force'] ? '1' : '0';
+		}
 
 		if (array_key_exists('new', $this->stat)) {
 			unset($this->stat['new']);
