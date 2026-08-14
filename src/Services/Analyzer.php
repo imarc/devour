@@ -6,6 +6,7 @@ use PDO;
 use DateTime;
 use PDOException;
 use RuntimeException;
+use Devour\Migrations\MigrationRunner;
 
 /**
  *
@@ -53,12 +54,18 @@ class Analyzer
 	 */
 	protected $tables = [];
 
+	/**
+	 *
+	 */
+	protected PDO $database;
+
 
 	/**
 	 *
 	 */
 	public function __construct(PDO $database)
 	{
+		MigrationRunner::assertReady($database);
 		$this->database = $database;
 		$this->parseLogs();
 	}

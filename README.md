@@ -19,6 +19,16 @@ $sync->addTable($table);
 $sync->run('events')
 ```
 
+## Database Migrations
+
+Devour manages its PostgreSQL tables through explicit, forward-only migrations. Run migrations during deployment before constructing `Synchronizer`, `Importer`, or `Analyzer`:
+
+```php
+Devour\Migrations\MigrationRunner::migrate($destination_database);
+```
+
+Devour never changes its schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, altered, or newer than the installed library. Fix the deployment migration step; do not modify `devour_migrations` manually.
+
 ## CSV Source Imports
 
 Use `Devour\Importer` for file workflows. It extends `Synchronizer`, uses a single database connection for both source and destination, and stages file data in the destination database through a pluggable file driver.
