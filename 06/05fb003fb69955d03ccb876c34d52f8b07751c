@@ -1,0 +1,21 @@
+src/Synchronizer.php
+  s_d323c3da842ce2::t_be762f45d01fa3 659-661
+test/routines/SynchronizerTest.php
+  s_d323c3da842ce2::t_083ae2f1241a79 46-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "0605fb003fb69955d03ccb876c34d52f8b07751c",
+  "prompts": {},
+  "sessions": {
+    "s_d323c3da842ce2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_ffebedd6effeqBXmtXYhVsvRz1",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
