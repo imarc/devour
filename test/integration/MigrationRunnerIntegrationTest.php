@@ -88,7 +88,7 @@ final class MigrationRunnerIntegrationTest extends TestCase
 		$this->database->exec('CREATE TABLE devour_stats (id INT PRIMARY KEY)');
 
 		$this->expectException(Devour\Migrations\MigrationException::class);
-		$this->expectExceptionMessage('incomplete');
+		$this->expectExceptionMessage('Back up and delete or rename the existing Devour tables');
 
 		try {
 			Devour\Migrations\MigrationRunner::migrate($this->database);

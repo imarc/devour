@@ -65,14 +65,9 @@ final class MigrationRunnerTest extends TestCase
 	}
 
 
-	public function testLegacySchemaCreationMethodsDirectOperatorsToMigrations()
+	public function testLegacySchemaCreationMethodsAreRemoved()
 	{
-		$database = new PDO('sqlite::memory:');
-		$synchronizer = new TestSynchronizer($database, $database);
-
-		$this->expectException(Devour\Migrations\MigrationException::class);
-		$this->expectExceptionMessage('MigrationRunner::migrate()');
-
-		$synchronizer->createStatsTable();
+		$this->assertFalse(method_exists(Devour\Synchronizer::class, 'createStatsTable'));
+		$this->assertFalse(method_exists(Devour\Synchronizer::class, 'createUpdatesTable'));
 	}
 }

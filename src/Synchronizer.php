@@ -6,7 +6,6 @@ use PDO;
 use DateTime;
 use PDOException;
 use RuntimeException;
-use Devour\Migrations\MigrationException;
 use Devour\Migrations\MigrationRunner;
 
 /**
@@ -130,24 +129,6 @@ class Synchronizer
 	public function addGenerator($name, callable $generator)
 	{
 		$this->generators[$name] = $generator;
-	}
-
-
-	/**
-	 *
-	 */
-	public function createStatsTable()
-	{
-		throw new MigrationException('Synchronizer::createStatsTable() is deprecated. Run MigrationRunner::migrate() during deployment.');
-	}
-
-
-	/**
-	 *
-	 */
-	public function createUpdatesTable()
-	{
-		throw new MigrationException('Synchronizer::createUpdatesTable() is deprecated. Run MigrationRunner::migrate() during deployment.');
 	}
 
 

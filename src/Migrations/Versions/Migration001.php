@@ -48,7 +48,7 @@ class Migration001 implements Migration
 		}
 
 		if (!$has_stats || !$has_updates) {
-			throw new MigrationException('Legacy Devour schema is incomplete; expected both devour_stats and devour_updates.');
+			throw $this->unsupportedLegacySchema('Expected both devour_stats and devour_updates.');
 		}
 
 		$this->validateLegacySchema($database, $schema);
@@ -90,17 +90,17 @@ class Migration001 implements Migration
 			$actual = $statement->fetchAll(PDO::FETCH_ASSOC);
 
 			if (count($actual) !== count($columns)) {
-				throw new MigrationException(sprintf('Legacy Devour schema drift: %s has an unexpected column set.', $table));
+				throw $this->unsupportedLegacySchema(sprintf('%s has an unexpected column set.', $table));
 			}
 
 			foreach ($actual as $column) {
 				if (!isset($columns[$column['attname']])) {
-					throw new MigrationException(sprintf('Legacy Devour schema drift: unexpected column %s.%s.', $table, $column['attname']));
+					throw $this->unsupportedLegacySchema(sprintf('Unexpected column %s.%s.', $table, $column['attname']));
 				}
 
 				[$type, $not_null] = $columns[$column['attname']];
 				if ($column['type'] !== $type || (bool) $column['attnotnull'] !== $not_null) {
-					throw new MigrationException(sprintf('Legacy Devour schema drift: invalid definition for %s.%s.', $table, $column['attname']));
+					throw $this->unsupportedLegacySchema(sprintf('Invalid definition for %s.%s.', $table, $column['attname']));
 				}
 			}
 
@@ -118,7 +118,7 @@ class Migration001 implements Migration
 		$result = $statement->fetchColumn();
 
 		if ($result !== '{' . $column . '}') {
-			throw new MigrationException(sprintf('Legacy Devour schema drift: %s primary key must be %s.', $table, $column));
+			throw $this->unsupportedLegacySchema(sprintf('%s primary key must be %s.', $table, $column));
 		}
 	}
 
@@ -130,8 +130,17 @@ class Migration001 implements Migration
 		$result = $statement->fetch(PDO::FETCH_NUM);
 
 		if (!$result || (int) $result[0] !== 100 || (int) $result[1] !== 5 || $result[2] !== $schema . '.devour_stats_id_seq' || strpos($result[3], "devour_stats_id_seq'::regclass)") === FALSE || !(bool) $result[4]) {
-			throw new MigrationException('Legacy Devour schema drift: invalid devour_stats_id_seq configuration.');
+			throw $this->unsupportedLegacySchema('Invalid devour_stats_id_seq configuration.');
 		}
+	}
+
+
+	private function unsupportedLegacySchema(string $reason): MigrationException
+	{
+		return new MigrationException(sprintf(
+			'Devour migration cannot baseline the existing schema: %s Back up and delete or rename the existing Devour tables, then rerun MigrationRunner::migrate() to create fresh Devour tables.',
+			$reason
+		));
 	}
 
 
