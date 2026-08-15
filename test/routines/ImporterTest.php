@@ -27,6 +27,11 @@ class TestFileDriver implements Devour\FileDriver
 
 class TestImporter extends Devour\Importer
 {
+	protected function assertMigrationReady(PDO $database): void
+	{
+	}
+
+
 	protected function hasStatsTable()
 	{
 		return TRUE;

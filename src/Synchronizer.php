@@ -6,6 +6,7 @@ use PDO;
 use DateTime;
 use PDOException;
 use RuntimeException;
+use Devour\Migrations\MigrationRunner;
 
 /**
  *
@@ -91,18 +92,11 @@ class Synchronizer
 	 */
 	public function __construct(PDO $source, PDO $destination, $strict_time = FALSE, $chunk_limit = 5000)
 	{
+		$this->assertMigrationReady($destination);
 		$this->source      = $source;
 		$this->destination = $destination;
 		$this->strictTime  = $strict_time;
 		$this->chunkLimit  = $chunk_limit;
-
-		if (!$this->hasStatsTable()) {
-			$this->createStatsTable();
-		}
-
-		if (!$this->hasUpdatesTable()) {
-			$this->createUpdatesTable();
-		}
 	}
 
 
@@ -138,46 +132,9 @@ class Synchronizer
 	}
 
 
-	/**
-	 *
-	 */
-	public function createStatsTable()
+	protected function assertMigrationReady(PDO $database): void
 	{
-		// This is postgres specific, but it's the only way to get a sequence to work with the id column
-		// TODO: Make this database driver agnostic
-		$this->destination->query("
-			CREATE SEQUENCE devour_stats_id_seq START 100 INCREMENT 5;
-		");
-		$this->destination->query("
-			CREATE TABLE devour_stats(
-				id INT NOT NULL DEFAULT nextval('devour_stats_id_seq') PRIMARY KEY,
-				start_time TIMESTAMP,
-				scheduled_by TEXT,
-				scheduled_time TIMESTAMP,
-				end_time TIMESTAMP,
-				tables TEXT,
-				ids TEXT,
-				force BOOLEAN,
-				log TEXT
-			);
-		");
-		$this->destination->query("
-			ALTER SEQUENCE devour_stats_id_seq OWNED BY devour_stats.id;
-		");
-	}
-
-
-	/**
-	 *
-	 */
-	public function createUpdatesTable()
-	{
-		$this->destination->query("
-			CREATE TABLE devour_updates(
-				target VARCHAR(255) PRIMARY KEY,
-				time TIMESTAMP
-			);
-		");
+		MigrationRunner::assertReady($database);
 	}
 
 

@@ -2,6 +2,13 @@
 
 use PHPUnit\Framework\TestCase;
 
+class TestSynchronizer extends Devour\Synchronizer
+{
+	protected function assertMigrationReady(PDO $database): void
+	{
+	}
+}
+
 final class SynchronizerTest extends TestCase
 {
 	public function testScheduleStoresForceAndTables(): void
@@ -10,7 +17,7 @@ final class SynchronizerTest extends TestCase
 		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
 
-		$sync = new Devour\Synchronizer($database, $database);
+		$sync = new TestSynchronizer($database, $database);
 		$sync->schedule(['events', 'people'], [], 'admin@example.com', TRUE);
 
 		$result = $database->query('SELECT tables, force FROM devour_stats LIMIT 1')->fetch(PDO::FETCH_ASSOC);
@@ -25,7 +32,7 @@ final class SynchronizerTest extends TestCase
 		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
 
-		$sync = new class($database, $database) extends Devour\Synchronizer {
+		$sync = new class($database, $database) extends TestSynchronizer {
 			public $calls = [];
 
 			protected function syncMapping($name, $ids, $force_update, $context = NULL)
