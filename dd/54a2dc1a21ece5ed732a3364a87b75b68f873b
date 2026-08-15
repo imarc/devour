@@ -1,0 +1,24 @@
+src/Migrations/Versions/Migration001.php
+  s_1027789b70df6b::t_04930930e03534 51,93,98,103,121,133,138-143
+  s_1027789b70df6b::t_1fe837d384d059 144-146
+test/routines/MigrationRunnerTest.php
+  s_1027789b70df6b::t_4767fe6e0156be 68,70-71
+test/integration/MigrationRunnerIntegrationTest.php
+  s_1027789b70df6b::t_4767fe6e0156be 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "dd54a2dc1a21ece5ed732a3364a87b75b68f873b",
+  "prompts": {},
+  "sessions": {
+    "s_1027789b70df6b": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0034eab22ffe0NBRYD6c5Fqrxp",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
