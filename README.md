@@ -21,13 +21,46 @@ $sync->run('events')
 
 ## Database Migrations
 
-Devour manages its PostgreSQL tables through explicit, forward-only migrations. Run migrations during deployment before constructing `Synchronizer`, `Importer`, or `Analyzer`:
+Devour manages its PostgreSQL tables through explicit, forward-only migrations. Migrations create and update Devour-owned tables such as `devour_stats`, `devour_updates`, and `devour_migrations` as the library evolves.
+
+Run migrations during every deployment, before constructing `Synchronizer`, `Importer`, or `Analyzer` and before starting sync workers. `migrate()` is safe to call repeatedly: it records each successful migration in `devour_migrations` and runs only pending versions.
 
 ```php
-Devour\Migrations\MigrationRunner::migrate($destination_database);
+use Devour\Migrations\MigrationRunner;
+
+$database = new PDO($dsn, $username, $password, [
+	PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+]);
+
+MigrationRunner::migrate($database);
+
+// Safe only after migrations complete.
+$sync = new Devour\Synchronizer($database, $database);
 ```
 
-Devour never changes its schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, altered, or newer than the installed library. Fix the deployment migration step; do not modify `devour_migrations` manually.
+### Requirements
+
+- Devour migrations require PostgreSQL.
+- Run deploy and runtime connections against the same PostgreSQL schema.
+- Do not call `migrate()` inside an application-managed transaction.
+- Migration definitions are forward-only. Never alter applied migration files or manually edit `devour_migrations`.
+
+### First Deploy And Existing Installations
+
+On a fresh database, the first migration creates Devour's current schema. On an existing installation, it validates the legacy `devour_stats` and `devour_updates` schema before recording the baseline migration. If the existing schema differs, deployment fails without changing it. Back up and delete or rename the Devour tables, then rerun the migration step to create fresh tables.
+
+### Runtime Failures
+
+Devour never changes schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, altered, or newer than the installed library. Treat this as a deployment failure: run migrations with the matching library release, then start application processes.
+
+```php
+try {
+	MigrationRunner::migrate($database);
+} catch (Devour\Migrations\MigrationException $exception) {
+	// Stop deployment; do not start Devour workers.
+	throw $exception;
+}
+```
 
 ## CSV Source Imports
 
