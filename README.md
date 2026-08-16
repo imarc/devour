@@ -47,7 +47,16 @@ $sync = new Devour\Synchronizer($database, $database);
 
 ### First Deploy And Existing Installations
 
-On a fresh database, the first migration creates Devour's current schema. On an existing installation, it validates the legacy `devour_stats` and `devour_updates` schema before recording the baseline migration. If the existing schema differs, deployment fails without changing it. Back up and delete or rename the Devour tables, then rerun the migration step to create fresh tables.
+On a fresh database, the first migration creates Devour's current schema. On an existing installation, it validates the legacy `devour_stats` and `devour_updates` schema before recording the baseline migration. Baselining never writes to an existing schema: it either records the migration or fails.
+
+Validation checks that the existing schema is *functionally* compatible with Devour, not that it is identical to what a fresh install creates. Legacy tables were built by hand, by earlier Devour releases, and by table renames, so the baseline accepts any equivalent shape:
+
+- Both tables must have exactly the expected column names, in any order.
+- Column types must be compatible, not exact: any integer width for `devour_stats.id`, `text` or `varchar` for text columns, `timestamp` with or without time zone for timestamps.
+- `devour_stats.id` must be the primary key and populate itself, from either a sequence default or an identity column. The sequence's name, start, increment, and ownership do not matter — Devour reads new ids back through `lastInsertId()`, which resolves to `lastval()`.
+- `devour_updates.target` must be the primary key.
+
+If the existing schema is genuinely incompatible — a missing column, an unexpected column, an incompatible type, the wrong primary key, or an `id` that does not populate itself — deployment fails without changing it. Back up and delete or rename the Devour tables, then rerun the migration step to create fresh tables.
 
 ### Runtime Failures
 

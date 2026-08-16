@@ -8,6 +8,39 @@ use Devour\Migrations\MigrationException;
 
 class Migration001 implements Migration
 {
+	/**
+	 * Postgres types accepted for each logical column kind.
+	 *
+	 * Baselining validates that an existing schema is functionally compatible with Devour, not
+	 * that it is byte-identical to what up() creates.  Legacy Devour tables predate this migration
+	 * and were built by hand, by earlier Devour releases, and by table renames, so equivalent
+	 * types have to be accepted.
+	 */
+	private const TYPE_KINDS = [
+		'integer'   => ['smallint', 'integer', 'bigint'],
+		'text'      => ['text', 'character varying', 'character'],
+		'timestamp' => ['timestamp without time zone', 'timestamp with time zone'],
+		'boolean'   => ['boolean'],
+	];
+
+	private const STATS_COLUMNS = [
+		'id'             => 'integer',
+		'start_time'     => 'timestamp',
+		'scheduled_by'   => 'text',
+		'scheduled_time' => 'timestamp',
+		'end_time'       => 'timestamp',
+		'tables'         => 'text',
+		'ids'            => 'text',
+		'force'          => 'boolean',
+		'log'            => 'text',
+	];
+
+	private const UPDATES_COLUMNS = [
+		'target' => 'text',
+		'time'   => 'timestamp',
+	];
+
+
 	public function getId(): int
 	{
 		return 1;
@@ -35,7 +68,7 @@ class Migration001 implements Migration
 		$has_updates = $this->relationExists($database, $schema, 'devour_updates');
 
 		if (!$has_stats && !$has_updates) {
-			$database->exec(sprintf('CREATE SEQUENCE %s START 100 INCREMENT 5', $sequence));
+			$database->exec(sprintf('CREATE SEQUENCE %s START 1 INCREMENT 1', $sequence));
 			$database->exec(sprintf(
 				'CREATE TABLE %s (id INT NOT NULL DEFAULT nextval(%s) PRIMARY KEY, start_time TIMESTAMP, scheduled_by TEXT, scheduled_time TIMESTAMP, end_time TIMESTAMP, tables TEXT, ids TEXT, force BOOLEAN, log TEXT)',
 				$stats,
@@ -66,48 +99,51 @@ class Migration001 implements Migration
 
 	private function validateLegacySchema(PDO $database, string $schema): void
 	{
-		$expected = [
-			'devour_stats' => [
-				'id' => ['integer', TRUE],
-				'start_time' => ['timestamp without time zone', FALSE],
-				'scheduled_by' => ['text', FALSE],
-				'scheduled_time' => ['timestamp without time zone', FALSE],
-				'end_time' => ['timestamp without time zone', FALSE],
-				'tables' => ['text', FALSE],
-				'ids' => ['text', FALSE],
-				'force' => ['boolean', FALSE],
-				'log' => ['text', FALSE],
-			],
-			'devour_updates' => [
-				'target' => ['character varying(255)', TRUE],
-				'time' => ['timestamp without time zone', FALSE],
-			],
-		];
+		$this->assertColumns($database, $schema, 'devour_stats', self::STATS_COLUMNS);
+		$this->assertColumns($database, $schema, 'devour_updates', self::UPDATES_COLUMNS);
 
-		foreach ($expected as $table => $columns) {
-			$statement = $database->prepare('SELECT a.attname, format_type(a.atttypid, a.atttypmod) AS type, a.attnotnull FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = :schema AND c.relname = :table AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum');
-			$statement->execute(['schema' => $schema, 'table' => $table]);
-			$actual = $statement->fetchAll(PDO::FETCH_ASSOC);
+		$this->assertPrimaryKey($database, $schema, 'devour_stats', 'id');
+		$this->assertPrimaryKey($database, $schema, 'devour_updates', 'target');
 
-			if (count($actual) !== count($columns)) {
-				throw $this->unsupportedLegacySchema(sprintf('%s has an unexpected column set.', $table));
-			}
+		$this->assertGeneratedId($database, $schema);
+	}
 
-			foreach ($actual as $column) {
-				if (!isset($columns[$column['attname']])) {
-					throw $this->unsupportedLegacySchema(sprintf('Unexpected column %s.%s.', $table, $column['attname']));
-				}
 
-				[$type, $not_null] = $columns[$column['attname']];
-				if ($column['type'] !== $type || (bool) $column['attnotnull'] !== $not_null) {
-					throw $this->unsupportedLegacySchema(sprintf('Invalid definition for %s.%s.', $table, $column['attname']));
-				}
-			}
+	/**
+	 * Assert a table has exactly the expected columns, each of a compatible type.
+	 *
+	 * Column order is not checked: it varies across legacy installs and has no bearing on the
+	 * queries Devour runs.  Nullability is not checked either; the primary key is covered by the
+	 * primary key assertion, and Devour always writes every remaining column, so an install that
+	 * tightened one to NOT NULL still works.
+	 *
+	 * @param array<string, string> $expected Column name mapped to its key in self::TYPE_KINDS
+	 */
+	private function assertColumns(PDO $database, string $schema, string $table, array $expected): void
+	{
+		$actual = $this->columns($database, $schema, $table);
 
-			$this->assertPrimaryKey($database, $schema, $table, array_key_first($columns));
+		$missing = array_diff(array_keys($expected), array_keys($actual));
+		if ($missing) {
+			throw $this->unsupportedLegacySchema(sprintf('%s is missing column %s.', $table, reset($missing)));
 		}
 
-		$this->assertSequence($database, $schema);
+		$extra = array_diff(array_keys($actual), array_keys($expected));
+		if ($extra) {
+			throw $this->unsupportedLegacySchema(sprintf('Unexpected column %s.%s.', $table, reset($extra)));
+		}
+
+		foreach ($expected as $column => $kind) {
+			if (!in_array($actual[$column]['type'], self::TYPE_KINDS[$kind], TRUE)) {
+				throw $this->unsupportedLegacySchema(sprintf(
+					'%s.%s is %s; expected a %s type.',
+					$table,
+					$column,
+					$actual[$column]['type'],
+					$kind
+				));
+			}
+		}
 	}
 
 
@@ -123,15 +159,44 @@ class Migration001 implements Migration
 	}
 
 
-	private function assertSequence(PDO $database, string $schema): void
+	/**
+	 * Assert devour_stats.id populates itself.
+	 *
+	 * Devour inserts stats rows without an id and reads the result back through lastInsertId(),
+	 * which resolves to lastval(), so the only requirement is that the column draws from some
+	 * sequence.  The sequence's name, start, increment, and ownership are incidental: legacy
+	 * installs carry sequences left behind by a devour_stats_new rename, and lastval() does not
+	 * care what they are called.
+	 */
+	private function assertGeneratedId(PDO $database, string $schema): void
 	{
-		$statement = $database->prepare("SELECT s.seqstart, s.seqincrement, pg_get_serial_sequence(format('%I.%I', :schema, 'devour_stats'), 'id'), pg_get_expr(d.adbin, d.adrelid), EXISTS (SELECT 1 FROM pg_depend d WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid AND d.refclassid = 'pg_class'::regclass AND d.refobjid = t.oid AND d.refobjsubid = a.attnum AND d.deptype = 'a') FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_class t ON t.oid = to_regclass(format('%I.%I', :schema, 'devour_stats')) JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = 'id' LEFT JOIN pg_attrdef d ON d.adrelid = t.oid AND d.adnum = a.attnum WHERE n.nspname = :schema AND c.relname = 'devour_stats_id_seq'");
-		$statement->execute(['schema' => $schema]);
-		$result = $statement->fetch(PDO::FETCH_NUM);
+		$columns = $this->columns($database, $schema, 'devour_stats');
 
-		if (!$result || (int) $result[0] !== 100 || (int) $result[1] !== 5 || $result[2] !== $schema . '.devour_stats_id_seq' || strpos($result[3], "devour_stats_id_seq'::regclass)") === FALSE || !(bool) $result[4]) {
-			throw $this->unsupportedLegacySchema('Invalid devour_stats_id_seq configuration.');
+		if (!$columns['id']['generated']) {
+			throw $this->unsupportedLegacySchema('devour_stats.id must default from a sequence or be an identity column.');
 		}
+	}
+
+
+	/**
+	 * @return array<string, array{type: string, not_null: bool, generated: bool}>
+	 */
+	private function columns(PDO $database, string $schema, string $table): array
+	{
+		$statement = $database->prepare("SELECT a.attname, format_type(a.atttypid, NULL) AS type, a.attnotnull::int AS not_null, (a.attidentity <> '')::int AS is_identity, pg_get_expr(d.adbin, d.adrelid) AS default_expr FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum WHERE n.nspname = :schema AND c.relname = :table AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum");
+		$statement->execute(['schema' => $schema, 'table' => $table]);
+
+		$columns = [];
+
+		foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+			$columns[$row['attname']] = [
+				'type'      => $row['type'],
+				'not_null'  => (int) $row['not_null'] === 1,
+				'generated' => (int) $row['is_identity'] === 1 || stripos((string) $row['default_expr'], 'nextval(') !== FALSE,
+			];
+		}
+
+		return $columns;
 	}
 
 
