@@ -1,0 +1,61 @@
+README.md
+  s_a95d9855aea73e::t_85236ff76449b9 50-59
+src/Migrations/Versions/Migration001.php
+  s_a95d9855aea73e::t_b992c65da16886 13,114,119-120,164
+  s_a95d9855aea73e::t_4434ec39cf6a8a 71
+  s_a95d9855aea73e::t_bd2ce6af377965 11-12
+  s_a95d9855aea73e::t_ea44f4ea827c5d 14-16
+  s_a95d9855aea73e::t_2bfacfd6521873 111-113
+  s_a95d9855aea73e::t_1df0485977bb3f 115-118
+  s_a95d9855aea73e::t_b6f1fc6a00710c 121-123
+  s_a95d9855aea73e::t_993eef2cf7574d 162-163
+  s_a95d9855aea73e::t_a7a3750f29f4eb 165-167
+  s_a95d9855aea73e::t_1e8507347d6178 17-43,102-103,105-106,108-110,124-129,131-133,136-146,168-184,186-187,189-196,198-199
+test/integration/MigrationRunnerIntegrationTest.php
+  s_a95d9855aea73e::t_913d2a0c77702e 48-68,105,108,112,117,120,124,135,139,145,164,172-173,177,185-186,190,198-199,203,210-211,215,223-224,228,232,236,238
+  s_a95d9855aea73e::t_58358ebbc5902d 81-85,96,99
+  s_a95d9855aea73e::t_07e7edd698cfa3 97-98
+  s_a95d9855aea73e::t_ac37880fb6a8c6 100
+  s_a95d9855aea73e::t_0eaed36b6d61e6 102-104
+  s_a95d9855aea73e::t_7dbb4c4c1cec6d 106-107
+  s_a95d9855aea73e::t_24122c57a0b7be 109-111
+  s_a95d9855aea73e::t_291cb36bae469b 113-116
+  s_a95d9855aea73e::t_b145102cc33779 118-119
+  s_a95d9855aea73e::t_205074e4ae823f 121-123
+  s_a95d9855aea73e::t_cc9c8fc25a555c 125-126
+  s_a95d9855aea73e::t_5bc38a7be33d95 134
+  s_a95d9855aea73e::t_d47cdcd81ce593 136-138
+  s_a95d9855aea73e::t_6c785c5215ee7e 140-144
+  s_a95d9855aea73e::t_62c29526d54156 146-147
+  s_a95d9855aea73e::t_a7631fdc088290 161-163
+  s_a95d9855aea73e::t_56e30d76b750d5 165-167,169-171
+  s_a95d9855aea73e::t_2b7eb18538395c 174-176
+  s_a95d9855aea73e::t_e4e95eb270a393 178-180,182-184
+  s_a95d9855aea73e::t_9b16815ad08569 187-189
+  s_a95d9855aea73e::t_9e4e90cdcc1689 191-193,195-197
+  s_a95d9855aea73e::t_62be32a8d5275c 200-202
+  s_a95d9855aea73e::t_a4382dbf3eb54c 204-209
+  s_a95d9855aea73e::t_bf2891a7c8a23c 212-214
+  s_a95d9855aea73e::t_57b4ecfda0b4c4 216-218,220-222
+  s_a95d9855aea73e::t_0570432593c470 225-227
+  s_a95d9855aea73e::t_1eec297f7158af 229-231
+  s_a95d9855aea73e::t_10d31d8ae7a6fc 233-235
+  s_a95d9855aea73e::t_cf1c2b6da750c1 237
+  s_a95d9855aea73e::t_074215e620e4c9 87-88,168,181,194,219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "31f5b5a063886e53aed26d467ebfe6c7b75ef563",
+  "prompts": {},
+  "sessions": {
+    "s_a95d9855aea73e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "71e58760-cbce-4cc5-a0f9-16ed85c9f78d",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
