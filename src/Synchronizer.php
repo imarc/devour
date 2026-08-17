@@ -177,33 +177,28 @@ class Synchronizer
 	/**
 	 * 
 	 */
+	protected function getOpenRun(): ?Run
+	{
+		$row = $this->destination
+			->query(sprintf(
+				'SELECT * FROM devour_stats WHERE %s ORDER BY id DESC LIMIT 1',
+				Run::WHERE_RUNNING
+			))
+			->fetch(PDO::FETCH_ASSOC)
+		;
+
+		return $row ? new Run($row) : NULL;
+	}
+
+
+	/**
+	 *
+	 */
 	public function getContext(): ?string
 	{
-		$result = $this->destination->query("
-			SELECT
-				ids, tables, force
-			FROM
-				devour_stats
-			WHERE
-				end_time IS NULL
-			LIMIT 1
-		");
+		$run = $this->getOpenRun();
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		$data = $result->fetch(PDO::FETCH_ASSOC);
-
-		if ($data['ids']) {
-			return 'individual';
-		}
-
-		if ($data['tables']) {
-			return 'limited';
-		}
-
-		return NULL;
+		return $run ? $run->getContext() : NULL;
 	}
 
 
@@ -244,21 +239,13 @@ class Synchronizer
 	 */
 	public function getCompletionTime($context = NULL): ?int
 	{
-		$result = $this->destination->query("
-			SELECT
-				start_time
-			FROM
-				devour_stats
-			WHERE
-				end_time IS NULL
-			LIMIT 1
-		");
+		$run = $this->getOpenRun();
 
-		if (!$result->rowCount()) {
+		if (!$run) {
 			return NULL;
 		}
 
-		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']) + $this->getSyncInterval($context);
+		return strtotime($run->getStartTime()) + (int) $this->getSyncInterval($context);
 	}
 
 	/**
@@ -266,21 +253,9 @@ class Synchronizer
 	 */
 	public function getStartTime(): ?int
 	{
-		$result = $this->destination->query("
-			SELECT
-				start_time
-			FROM
-				devour_stats
-			WHERE
-				end_time IS NULL
-			LIMIT 1
-		");
+		$run = $this->getOpenRun();
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		return strtotime($result->fetch(PDO::FETCH_ASSOC)['start_time']);
+		return $run ? strtotime($run->getStartTime()) : NULL;
 	}
 
 
@@ -289,21 +264,9 @@ class Synchronizer
 	 */
 	public function getScheduledBy(): ?string
 	{
-		$result = $this->destination->query("
-			SELECT
-				scheduled_by
-			FROM
-				devour_stats
-			WHERE
-				end_time IS NULL
-			LIMIT 1
-		");
+		$run = $this->getOpenRun();
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		return $result->fetch(PDO::FETCH_ASSOC)['scheduled_by'];
+		return $run ? $run->getScheduledBy() : NULL;
 	}
 
 
@@ -434,24 +397,12 @@ class Synchronizer
 	 */
 	public function isScheduled(): ?bool
 	{
-		$result = $this->destination->query("
-			SELECT
-				COUNT(*) as running
-			FROM
-				devour_stats
-			WHERE
-				start_time IS NULL
-			AND
-				scheduled_time IS NOT NULL
-			LIMIT
-				1
-		");
+		$result = $this->destination->query(
+			'SELECT COUNT(*) AS scheduled FROM devour_stats
+			 WHERE start_time IS NULL AND scheduled_time IS NOT NULL AND canceled_time IS NULL'
+		)->fetch(PDO::FETCH_ASSOC);
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'];
+		return (bool) $result['scheduled'];
 	}
 
 
@@ -460,24 +411,16 @@ class Synchronizer
 	 */
 	public function isRunning(): ?bool
 	{
-		$result = $this->destination->query("
-			SELECT
-				COUNT(*) as running
-			FROM
-				devour_stats
-			WHERE
-				end_time IS NULL
-			AND
-				start_time IS NOT NULL
-			LIMIT
-				1
-		");
+		//
+		// The rowCount() guard these methods used to carry was dead: an aggregate always returns
+		// exactly one row, so the documented NULL return was unreachable.
+		//
+		$result = $this->destination->query(sprintf(
+			'SELECT COUNT(*) AS running FROM devour_stats WHERE %s',
+			Run::WHERE_RUNNING
+		))->fetch(PDO::FETCH_ASSOC);
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		return (bool) $result->fetch(PDO::FETCH_ASSOC)['running'];
+		return (bool) $result['running'];
 	}
 
 
