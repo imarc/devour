@@ -19,6 +19,7 @@ final class SynchronizerTest extends TestCase
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT,
 			canceled_time TEXT, canceled_by TEXT, heartbeat TEXT, max_gap INTEGER,
+			error TEXT, table_stats TEXT,
 			tables TEXT, ids TEXT, force INTEGER, log TEXT
 		)');
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
@@ -38,6 +39,7 @@ final class SynchronizerTest extends TestCase
 			}
 		};
 
+		$sync->setLogVerbosity(Devour\Synchronizer::VERBOSITY_VERBOSE);
 		$sync->schedule([], [], 'admin@example.com');
 		$sync->emit('first');
 		$sync->emit('second');
@@ -107,6 +109,151 @@ final class SynchronizerTest extends TestCase
 		$this->assertSame(
 			90,
 			(int) $database->query('SELECT max_gap FROM devour_stats LIMIT 1')->fetchColumn()
+		);
+	}
+
+
+	private function loggingSynchronizer(PDO $database): object
+	{
+		$sync = new class($database, $database) extends TestSynchronizer {
+			public function emit(string $message, int $level): void
+			{
+				$this->log($message, $level);
+			}
+
+			public function emitError(string $table, string $op, string $message, $context = NULL): void
+			{
+				$this->logError($table, $op, $message, $context);
+			}
+
+			public function openStats(string $table): void
+			{
+				$this->openTableStats($table);
+			}
+
+			public function countStat(string $table, string $metric, int $n): void
+			{
+				$this->countTableStat($table, $metric, $n);
+			}
+
+			public function closeStats(string $table): void
+			{
+				$this->closeTableStats($table);
+			}
+		};
+
+		// keep stdout quiet; the stored log is what these assert on
+		$sync->setEchoVerbosity(-1);
+
+		return $sync;
+	}
+
+
+	public function testSummaryVerbosityKeepsSummariesAndErrorsButNotProgress()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emit('...transfering 500 temporary records', Devour\Synchronizer::VERBOSITY_VERBOSE);
+		$sync->emit('[events] 500 transferred in 3s', Devour\Synchronizer::VERBOSITY_SUMMARY);
+		$sync->emitError('events', 'insert failed', 'duplicate key');
+
+		$log = (string) $database->query('SELECT log FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertStringNotContainsString('transfering', $log);
+		$this->assertStringContainsString('500 transferred in 3s', $log);
+		$this->assertStringContainsString('duplicate key', $log);
+	}
+
+
+	public function testVerboseVerbosityKeepsEverything()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->setLogVerbosity(Devour\Synchronizer::VERBOSITY_VERBOSE);
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emit('...transfering 500 temporary records', Devour\Synchronizer::VERBOSITY_VERBOSE);
+
+		$this->assertStringContainsString(
+			'transfering',
+			(string) $database->query('SELECT log FROM devour_stats LIMIT 1')->fetchColumn()
+		);
+	}
+
+
+	/**
+	 * A failing batch repeats one problem for every row; the column records it once with a count.
+	 */
+	public function testErrorsAggregateByTableAndMessage()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+
+		foreach (['pb', 'pc', 'at'] as $id) {
+			$sync->emitError('ledgers', 'insert failed', 'duplicate key on ledgers_pkey', '{"id":"' . $id . '"}');
+		}
+
+		$sync->emitError('events', 'update failed', 'value too long', '{"id":"e1"}');
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$lines = array_values(array_filter(explode("\n", $error)));
+
+		$this->assertCount(2, $lines);
+		$this->assertStringContainsString('[ledgers] 3 x insert failed: duplicate key on ledgers_pkey', $lines[0]);
+		$this->assertStringContainsString('[events] update failed: value too long', $lines[1]);
+	}
+
+
+	/**
+	 * Otherwise-identical failures differing only by the offending value are one error.
+	 */
+	public function testErrorsAggregateAcrossVaryingValues()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emitError('people', 'insert failed', "invalid input syntax for integer: 'abc'");
+		$sync->emitError('people', 'insert failed', "invalid input syntax for integer: 'xyz'");
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertCount(1, array_filter(explode("\n", $error)));
+		$this->assertStringContainsString('2 x insert failed', $error);
+	}
+
+
+	public function testTableStatsAreRecordedStructurally()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->openStats('events');
+		$sync->countStat('events', 'transferred', 500);
+		$sync->countStat('events', 'inserted', 3);
+		$sync->countStat('events', 'updated', 44);
+		$sync->emitError('events', 'insert failed', 'duplicate key');
+		$sync->closeStats('events');
+
+		$stats = json_decode(
+			(string) $database->query('SELECT table_stats FROM devour_stats LIMIT 1')->fetchColumn(),
+			TRUE
+		);
+
+		$this->assertSame(500, $stats['events']['transferred']);
+		$this->assertSame(3,   $stats['events']['inserted']);
+		$this->assertSame(44,  $stats['events']['updated']);
+		$this->assertSame(1,   $stats['events']['failed']);
+		$this->assertNotNull($stats['events']['end']);
+
+		$this->assertStringContainsString(
+			'[events] 500 transferred, 3 inserted, 44 updated, 1 failed',
+			(string) $database->query('SELECT log FROM devour_stats LIMIT 1')->fetchColumn()
 		);
 	}
 

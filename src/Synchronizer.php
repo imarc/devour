@@ -24,6 +24,36 @@ class Synchronizer
 	 * logAppend(), not by statSet().
 	 */
 	/**
+	 * Errors only.  Suitable for a scheduled run where only failures are worth keeping.
+	 */
+	const VERBOSITY_ERRORS = 0;
+
+
+	/**
+	 * A line per table, plus errors.
+	 */
+	const VERBOSITY_SUMMARY = 1;
+
+
+	/**
+	 * Step-by-step progress within each table.
+	 */
+	const VERBOSITY_VERBOSE = 2;
+
+
+	/**
+	 * Adds the offending rows and queries behind each error.
+	 */
+	const VERBOSITY_DEBUG = 3;
+
+
+	/**
+	 * How many distinct errors the error column holds before it starts counting rather than listing.
+	 */
+	const ERROR_LIMIT = 50;
+
+
+	/**
 	 * How many recent completed runs an interval estimate is drawn from.
 	 *
 	 * Counted in runs rather than measured in days so that a site syncing weekly still has a
@@ -83,6 +113,30 @@ class Synchronizer
 	 *
 	 */
 	protected $stat = array();
+
+
+	/**
+	 * Aggregated failures, keyed by table + operation + normalized message.
+	 */
+	protected $errors = array();
+
+
+	/**
+	 * Per-table figures, keyed by destination table.
+	 */
+	protected $tableStats = array();
+
+
+	/**
+	 *
+	 */
+	protected $logVerbosity = self::VERBOSITY_SUMMARY;
+
+
+	/**
+	 *
+	 */
+	protected $echoVerbosity = self::VERBOSITY_VERBOSE;
 
 
 	/**
@@ -567,7 +621,7 @@ class Synchronizer
 						throw $e;
 
 					} catch (\Exception $e) {
-						$this->log($e->getMessage());
+						$this->logError($mapping, 'sync failed', $e->getMessage());
 					}
 				}
 
@@ -610,6 +664,8 @@ class Synchronizer
 				'canceled_by'    => NULL,
 				'heartbeat'      => NULL,
 				'max_gap'        => NULL,
+				'error'          => NULL,
+				'table_stats'    => NULL,
 				'tables'         => NULL,
 				'ids'            => NULL,
 				'log'            => NULL,
@@ -859,7 +915,11 @@ class Synchronizer
 			;
 
 		} catch (\Exception $e) {
-			$this->log($e->getMessage());
+			$this->logError(
+				$mapping->getDestination(),
+				'existing destination key lookup failed',
+				$e->getMessage()
+			);
 		}
 	}
 
@@ -876,7 +936,11 @@ class Synchronizer
 			;
 
 		} catch (\Exception $e) {
-			$this->log($e->getMessage());
+			$this->logError(
+				$mapping->getDestination(),
+				'existing source key lookup failed',
+				$e->getMessage()
+			);
 		}
 	}
 
@@ -898,7 +962,11 @@ class Synchronizer
 				);
 
 			} catch (\Exception $e) {
-				$this->log($e->getMessage());
+				$this->logError(
+					$mapping->getDestination(),
+					'updated source key lookup failed',
+					$e->getMessage()
+				);
 			}
 
 			sleep(static::SLEEP_TIME);
@@ -1013,15 +1081,268 @@ class Synchronizer
 
 
 	/**
+	 * How much of a run's narration is kept in devour_stats.log.
+	 *
+	 * Defaults to SUMMARY.  The stored log is read long after the fact, through an admin screen or
+	 * an email, where a line per table plus the errors is what anyone actually wants; step-by-step
+	 * progress made a full sync's log tens of thousands of lines and buried the failures in them.
+	 */
+	public function setLogVerbosity(int $verbosity): void
+	{
+		$this->logVerbosity = $verbosity;
+	}
+
+
+	/**
+	 * How much is echoed to stdout, which is separate and defaults to VERBOSE.
+	 *
+	 * Console output is ephemeral, so there is no reason to abbreviate it just because the stored
+	 * log is abbreviated.
+	 */
+	public function setEchoVerbosity(int $verbosity): void
+	{
+		$this->echoVerbosity = $verbosity;
+	}
+
+
+	/**
 	 *
 	 */
-	protected function log($message)
+	protected function log($message, int $level = self::VERBOSITY_VERBOSE)
 	{
 		$line = sprintf('[%s] %s', date('Y-m-d H:i:s', $this->now()), $message . PHP_EOL);
 
-		echo $line;
+		if ($level <= $this->echoVerbosity) {
+			echo $line;
+		}
 
-		$this->logAppend($line);
+		//
+		// logAppend() is still called when the line is not stored, because it carries the heartbeat
+		// and the cancellation check.  A run whose verbosity hides every line must still be known
+		// to be alive, and must still stop when cancelled.
+		//
+		$this->logAppend($line, $level <= $this->logVerbosity);
+	}
+
+
+	/**
+	 * Record a failure against the mapping that produced it.
+	 *
+	 * Errors are aggregated by table and message rather than appended one per occurrence.  A real
+	 * sync produces the same failure hundreds of times — one duplicate key repeated for every row
+	 * of a batch — so a verbatim list is mostly repetition and is the largest thing in the log.
+	 *
+	 * $context is the offending row or query.  It is kept as a single example and only surfaces at
+	 * DEBUG verbosity, because it is the bulk of an error line and is rarely the first thing needed.
+	 */
+	protected function logError(string $table, string $operation, string $message, $context = NULL): void
+	{
+		$message   = trim(preg_replace('/\s+/', ' ', $message));
+		$signature = $table . "\0" . $operation . "\0" . $this->normalizeError($message);
+
+		if (!isset($this->errors[$signature])) {
+			$this->errors[$signature] = [
+				'table'     => $table,
+				'operation' => $operation,
+				'message'   => $message,
+				'sample'    => is_scalar($context) ? (string) $context : json_encode($context),
+				'count'     => 0,
+			];
+		}
+
+		$this->errors[$signature]['count']++;
+
+		if (isset($this->tableStats[$table])) {
+			$this->tableStats[$table]['failed']++;
+		}
+
+		$detail = $this->echoVerbosity >= self::VERBOSITY_DEBUG && $context !== NULL
+			? sprintf(' -- %s', is_scalar($context) ? $context : json_encode($context))
+			: '';
+
+		$this->log(
+			sprintf('[%s] %s: %s%s', $table, $operation, $message, $detail),
+			self::VERBOSITY_ERRORS
+		);
+
+		$this->persistErrors();
+	}
+
+
+	/**
+	 * Collapse the parts of a message that vary between otherwise identical failures.
+	 *
+	 * Quoted literals and bare numbers carry the offending value, so leaving them in would file
+	 * every row of a failing batch as its own distinct error.
+	 */
+	protected function normalizeError(string $message): string
+	{
+		return preg_replace(['/\'[^\']*\'/', '/\b\d+\b/'], ["'?'", '#'], $message);
+	}
+
+
+	/**
+	 * Render the aggregated errors, newest table last, capped so one pathological run cannot
+	 * recreate in this column the size problem it was added to solve.
+	 */
+	public function composeErrors(): ?string
+	{
+		if (!$this->errors) {
+			return NULL;
+		}
+
+		$lines = [];
+		$shown = array_slice($this->errors, 0, self::ERROR_LIMIT);
+
+		foreach ($shown as $error) {
+			$lines[] = sprintf(
+				'[%s] %s%s: %s%s',
+				$error['table'],
+				$error['count'] > 1 ? $error['count'] . ' x ' : '',
+				$error['operation'],
+				$error['message'],
+				$error['sample'] !== NULL && $error['sample'] !== ''
+					? sprintf(' (e.g. %s)', $error['sample'])
+					: ''
+			);
+		}
+
+		if (count($this->errors) > self::ERROR_LIMIT) {
+			$lines[] = sprintf('... and %s more distinct errors', count($this->errors) - self::ERROR_LIMIT);
+		}
+
+		return join(PHP_EOL, $lines) . PHP_EOL;
+	}
+
+
+	/**
+	 *
+	 */
+	/**
+	 * Begin counting a table's work.
+	 *
+	 * These figures used to exist only as sentences in the log, which Analyzer read back by regular
+	 * expression.  Counting them here means the log can be shortened without taking the statistics
+	 * with it, and means a count is a number rather than something parsed out of prose.
+	 */
+	protected function openTableStats(string $table): void
+	{
+		$this->tableStats[$table] = [
+			'start'       => date('Y-m-d H:i:s', $this->now()),
+			'end'         => NULL,
+			'duration'    => NULL,
+			'transferred' => 0,
+			'inserted'    => 0,
+			'updated'     => 0,
+			'deleted'     => 0,
+			'failed'      => 0,
+		];
+	}
+
+
+	/**
+	 *
+	 */
+	protected function countTableStat(string $table, string $metric, int $amount): void
+	{
+		if (!isset($this->tableStats[$table])) {
+			$this->openTableStats($table);
+		}
+
+		$this->tableStats[$table][$metric] += $amount;
+	}
+
+
+	/**
+	 * Close a table's figures and emit its one-line summary.
+	 */
+	protected function closeTableStats(string $table): void
+	{
+		if (!isset($this->tableStats[$table])) {
+			return;
+		}
+
+		$stats = &$this->tableStats[$table];
+
+		$stats['end']      = date('Y-m-d H:i:s', $this->now());
+		$stats['duration'] = $this->now() - strtotime($stats['start']);
+
+		$parts = [];
+
+		foreach (['transferred', 'inserted', 'updated', 'deleted', 'failed'] as $metric) {
+			if ($stats[$metric]) {
+				$parts[] = sprintf('%s %s', number_format($stats[$metric]), $metric);
+			}
+		}
+
+		$this->log(
+			sprintf(
+				'[%s] %s in %s',
+				$table,
+				$parts ? join(', ', $parts) : 'nothing to do',
+				$this->composeDuration($stats['duration'])
+			),
+			self::VERBOSITY_SUMMARY
+		);
+
+		$this->persistTableStats();
+	}
+
+
+	/**
+	 *
+	 */
+	protected function composeDuration(int $seconds): string
+	{
+		if ($seconds < 60) {
+			return $seconds . 's';
+		}
+
+		return sprintf('%dm%02ds', intdiv($seconds, 60), $seconds % 60);
+	}
+
+
+	/**
+	 *
+	 */
+	protected function persistTableStats(): void
+	{
+		if (empty($this->stat['id'])) {
+			return;
+		}
+
+		$this->stat['table_stats'] = json_encode($this->tableStats);
+
+		$statement = $this->destination->prepare(
+			'UPDATE devour_stats SET table_stats = :table_stats WHERE id = :id'
+		);
+
+		$statement->execute([
+			'table_stats' => $this->stat['table_stats'],
+			'id'          => $this->stat['id'],
+		]);
+	}
+
+
+	/**
+	 *
+	 */
+	protected function persistErrors(): void
+	{
+		if (empty($this->stat['id'])) {
+			return;
+		}
+
+		$this->stat['error'] = $this->composeErrors();
+
+		$statement = $this->destination->prepare(
+			'UPDATE devour_stats SET error = :error WHERE id = :id'
+		);
+
+		$statement->execute([
+			'error' => $this->stat['error'],
+			'id'    => $this->stat['id'],
+		]);
 	}
 
 
@@ -1036,12 +1357,14 @@ class Synchronizer
 	 * makes liveness tracking free.  max_gap only ever grows from an interval that was actually
 	 * observed, so a run that dies contributes nothing to it.
 	 */
-	protected function logAppend(string $line): void
+	protected function logAppend(string $line, bool $store = TRUE): void
 	{
 		$now   = $this->now();
 		$stamp = date('Y-m-d H:i:s', $now);
 
-		$this->stat['log'] = ($this->stat['log'] ?? '') . $line;
+		if ($store) {
+			$this->stat['log'] = ($this->stat['log'] ?? '') . $line;
+		}
 
 		if (empty($this->stat['id'])) {
 			return;
@@ -1060,20 +1383,26 @@ class Synchronizer
 		//
 		$max = max((int) ($this->stat['max_gap'] ?? 0), $gap === NULL ? 0 : $gap);
 
-		$statement = $this->destination->prepare(
+		$statement = $this->destination->prepare(sprintf(
 			"UPDATE devour_stats
-			 SET log = COALESCE(log, '') || :line,
+			 SET %s
 			     heartbeat = :heartbeat,
 			     max_gap = :max_gap
-			 WHERE id = :id AND canceled_time IS NULL"
-		);
+			 WHERE id = :id AND canceled_time IS NULL",
+			$store ? "log = COALESCE(log, '') || :line," : ''
+		));
 
-		$statement->execute([
-			'line'      => $line,
+		$params = [
 			'heartbeat' => $stamp,
 			'max_gap'   => $max,
 			'id'        => $this->stat['id'],
-		]);
+		];
+
+		if ($store) {
+			$params['line'] = $line;
+		}
+
+		$statement->execute($params);
 
 		if ($statement->rowCount() < 1) {
 			throw new CanceledException(sprintf(
@@ -1178,6 +1507,8 @@ class Synchronizer
 
 		$this->log(sprintf('Syncing %s', $name));
 
+		$this->openTableStats($mapping->getDestination());
+
 		$this->createTemporaryTable($mapping);
 		$this->syncMappingTemporary($mapping, $ids);
 
@@ -1208,6 +1539,8 @@ class Synchronizer
 		//
 
 		$this->updateSet($name, $start_sync_time);
+
+		$this->closeTableStats($mapping->getDestination());
 
 		$this->recordSynced(array_pop($this->stack), $ids);
 
@@ -1255,15 +1588,18 @@ class Synchronizer
 			return;
 		}
 
+		$delete_results = [];
+
 		try {
 			$delete_select_query = $mapping->composeSourceDeleteSelectQuery($ids);
 			$delete_results      = $this->destination->query($delete_select_query)->fetchAll();
 		} catch (\Exception $e) {
-			$this->log(sprintf(
-				"Failed selecting delete results with query: %s  The database returned: %s",
-				$delete_select_query,
-				$e->getMessage()
-			));
+			$this->logError(
+				$mapping->getDestination(),
+				'delete selection failed',
+				$e->getMessage(),
+				$delete_select_query
+			);
 		}
 
 		if (!count($delete_results)) {
@@ -1296,12 +1632,15 @@ class Synchronizer
 				$statement = $this->destination->prepare($destination_delete_query);
 				$statement->execute($key_values);
 
+				$this->countTableStat($mapping->getDestination(), 'deleted', 1);
+
 			} catch (\Exception $e) {
-				$this->log(sprintf(
-					"Failed removing destination records with query: %s  The database returned: %s",
-					$destination_delete_query,
-					$e->getMessage()
-				));
+				$this->logError(
+					$mapping->getDestination(),
+					'delete failed',
+					$e->getMessage(),
+					$destination_delete_query
+				);
 			}
 		}
 	}
@@ -1323,11 +1662,12 @@ class Synchronizer
 			$source_select_query = $mapping->composeSourceInsertSelectQuery();
 			$insert_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 		} catch (\Exception $e) {
-			$this->log(sprintf(
-				"Failed selecting insert results with query: %s  The database returned: %s",
-				$source_select_query,
-				$e->getMessage()
-			));
+			$this->logError(
+				$mapping->getDestination(),
+				'insert selection failed',
+				$e->getMessage(),
+				$source_select_query
+			);
 		}
 
 		if (!count($insert_results)) {
@@ -1362,13 +1702,16 @@ class Synchronizer
 
 			try {
 				$insert_statement->execute();
+
+				$this->countTableStat($mapping->getDestination(), 'inserted', 1);
+
 			} catch (\Exception $e) {
-				$this->log(sprintf(
-					'Failed inserting into %s with the following: %s  The database returned: %s',
-					ucwords(str_replace('_', ' ', $mapping->getDestination())),
-					json_encode($this->filter($mapping, $row, 'INSERT')),
-					$e->getMessage()
-				));
+				$this->logError(
+					$mapping->getDestination(),
+					'insert failed',
+					$e->getMessage(),
+					json_encode($this->filter($mapping, $row, 'INSERT'))
+				);
 			}
 		}
 	}
@@ -1414,22 +1757,25 @@ class Synchronizer
 
 				try {
 					$insert_statement->execute();
+
+					$this->countTableStat($mapping->getDestination(), 'transferred', 1);
+
 				} catch (\Exception $e) {
-					$this->log(sprintf(
-						'Failed inserting into %s with the following: %s  The database returned: %s',
-						ucwords(str_replace('_', ' ', $mapping->getDestination())),
-						json_encode($this->filter($mapping, $row, 'INSERT')),
-						$e->getMessage()
-					));
+					$this->logError(
+						$mapping->getDestination(),
+						'transfer failed',
+						$e->getMessage(),
+						json_encode($this->filter($mapping, $row, 'INSERT'))
+					);
 				}
 			}
 		} catch (\Exception $e) {
-			$this->log(sprintf(
-				"Failed selecting transfer results from %s database with query: %s  The database returned: %s",
-				$query_location,
-				$source_select_query,
-				$e->getMessage()
-			));
+			$this->logError(
+				$mapping->getDestination(),
+				sprintf('transfer selection from %s failed', $query_location),
+				$e->getMessage(),
+				$source_select_query
+			);
 		}
 	}
 
@@ -1448,11 +1794,12 @@ class Synchronizer
 				$source_select_query = $mapping->composeSourceUpdateSelectQuery($force, $this->chunkLimit, $offset);
 				$update_results      = $this->destination->query($source_select_query, PDO::FETCH_ASSOC)->fetchAll();
 			} catch (\Exception $e) {
-				$this->log(sprintf(
-					"Failed selecting update results with query: %s  The database returned: %s",
-					$source_select_query,
-					$e->getMessage()
-				));
+				$this->logError(
+					$mapping->getDestination(),
+					'update selection failed',
+					$e->getMessage(),
+					$source_select_query
+				);
 			}
 
 			if (!$force) {
@@ -1495,13 +1842,15 @@ class Synchronizer
 				try {
 					$update_statement->execute();
 
+					$this->countTableStat($mapping->getDestination(), 'updated', 1);
+
 				} catch (\Exception $e) {
-					$this->log(sprintf(
-						'Failed updating %s with the following: %s  The database returned: %s',
-						ucwords(str_replace('_', ' ', $mapping->getDestination())),
-						json_encode($this->filter($mapping, $row, 'UPDATE')),
-						$e->getMessage()
-					));
+					$this->logError(
+						$mapping->getDestination(),
+						'update failed',
+						$e->getMessage(),
+						json_encode($this->filter($mapping, $row, 'UPDATE'))
+					);
 				}
 			}
 
@@ -1527,10 +1876,11 @@ class Synchronizer
 			));
 
 		}  catch (\Exception $e) {
-			$this->log(sprintf('Could not truncate destination table: %s  The database returned: %s',
+			$this->logError(
 				$mapping->getDestination(),
+				'truncate failed',
 				$e->getMessage()
-			));
+			);
 		}
 	}
 

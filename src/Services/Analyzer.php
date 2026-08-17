@@ -153,6 +153,46 @@ class Analyzer
 	/**
 	 *
 	 */
+	/**
+	 * Build a run's entry from its recorded per-table figures.
+	 *
+	 * Returns NULL when the run predates table_stats, leaving it to the log parser.
+	 */
+	protected function readTableStats(array $result): ?array
+	{
+		$stats = json_decode((string) ($result['table_stats'] ?? ''), TRUE);
+
+		if (!is_array($stats) || !$stats) {
+			return NULL;
+		}
+
+		$log = [];
+
+		foreach ($stats as $name => $figures) {
+			$this->tables[] = $name;
+
+			$log[] = [
+				'table'      => $name,
+				'start_time' => $figures['start'] ? new DateTime($figures['start']) : NULL,
+				'end_time'   => $figures['end'] ? new DateTime($figures['end']) : NULL,
+				'duration'   => $figures['duration'] ?? NULL,
+				'count'      => $figures['updated'] ?? NULL,
+				'step'       => 'completed',
+				'failures'   => array_fill(0, (int) ($figures['failed'] ?? 0), 'failed'),
+			];
+		}
+
+		return [
+			'start_time' => new DateTime($result['start_time']),
+			'end_time'   => $result['end_time'] ? new DateTime($result['end_time']) : NULL,
+			'log'        => $log
+		];
+	}
+
+
+	/**
+	 *
+	 */
 	protected function parseLogs()
 	{
 		$rows = $this->database->query("
@@ -160,6 +200,17 @@ class Analyzer
 		");
 
 		foreach ($rows as $result) {
+			//
+			// Runs recorded since table_stats existed carry their figures as data.  Older runs, and
+			// only those, still have them recovered from the log prose below — which is why that
+			// parsing stays here rather than being removed with the verbose logging it reads.
+			//
+			if ($structured = $this->readTableStats($result)) {
+				$this->data[] = $structured;
+
+				continue;
+			}
+
 			$result_data = [];
 			$lines       = explode("\n", (string) $result['log']);
 

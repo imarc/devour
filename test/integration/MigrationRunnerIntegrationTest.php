@@ -72,7 +72,7 @@ final class MigrationRunnerIntegrationTest extends TestCase
 		Devour\Migrations\MigrationRunner::migrate($this->database);
 
 		Devour\Migrations\MigrationRunner::assertReady($this->database);
-		$this->assertSame(2, (int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn());
+		$this->assertSame(3, (int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn());
 		$this->assertInstanceOf(Devour\Synchronizer::class, new Devour\Synchronizer($this->database, $this->database));
 		$this->assertInstanceOf(Devour\Analyzer::class, new Devour\Analyzer($this->database));
 	}
@@ -307,6 +307,17 @@ final class MigrationRunnerIntegrationTest extends TestCase
 	}
 
 
+	public function testErrorAndTableStatColumnsAreAdded(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$columns = $this->statsColumns();
+
+		$this->assertSame('text', $columns['error']);
+		$this->assertSame('text', $columns['table_stats']);
+	}
+
+
 	public function testBothMigrationsAreRecorded(): void
 	{
 		Devour\Migrations\MigrationRunner::migrate($this->database);
@@ -316,7 +327,7 @@ final class MigrationRunnerIntegrationTest extends TestCase
 			->fetchAll(PDO::FETCH_COLUMN)
 		;
 
-		$this->assertSame(['1', '2'], array_map('strval', $ids));
+		$this->assertSame(['1', '2', '3'], array_map('strval', $ids));
 	}
 
 
@@ -328,7 +339,7 @@ final class MigrationRunnerIntegrationTest extends TestCase
 		Devour\Migrations\MigrationRunner::assertReady($this->database);
 
 		$this->assertSame(
-			2,
+			3,
 			(int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn()
 		);
 	}

@@ -160,6 +160,41 @@ class Run
 
 
 	/**
+	 * The run's failures, aggregated by table and message.
+	 *
+	 * Held apart from the log so it can be shown or emailed on its own.  A full sync's log is tens
+	 * of thousands of lines and its failures are a handful of distinct problems repeated; this is
+	 * the handful.
+	 */
+	public function getError(): ?string
+	{
+		return $this->row['error'] ?? NULL;
+	}
+
+
+	/**
+	 *
+	 */
+	public function hasError(): bool
+	{
+		return trim((string) $this->getError()) !== '';
+	}
+
+
+	/**
+	 * Per-table figures, keyed by destination table.
+	 *
+	 * @return array<string, array>
+	 */
+	public function getTableStats(): array
+	{
+		$decoded = json_decode((string) ($this->row['table_stats'] ?? ''), TRUE);
+
+		return is_array($decoded) ? $decoded : [];
+	}
+
+
+	/**
 	 *
 	 */
 	public function getScheduledBy(): ?string

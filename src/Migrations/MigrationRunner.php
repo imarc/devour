@@ -7,6 +7,7 @@ use PDO;
 use ReflectionClass;
 use Devour\Migrations\Versions\Migration001;
 use Devour\Migrations\Versions\Migration002;
+use Devour\Migrations\Versions\Migration003;
 
 class MigrationRunner
 {
@@ -95,7 +96,7 @@ class MigrationRunner
 
 	protected static function migrations(): array
 	{
-		return [new Migration001(), new Migration002()];
+		return [new Migration001(), new Migration002(), new Migration003()];
 	}
 
 

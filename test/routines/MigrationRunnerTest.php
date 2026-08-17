@@ -88,7 +88,19 @@ final class MigrationRunnerTest extends TestCase
 			TestMigrationRunner::registry()
 		);
 
-		$this->assertSame([1, 2], $ids);
+		$this->assertSame([1, 2, 3], $ids);
+	}
+
+
+	public function testErrorReportingMigrationIsRegistered()
+	{
+		$migration = new Devour\Migrations\Versions\Migration003();
+
+		$this->assertSame(3, $migration->getId());
+		$this->assertSame(
+			'Add error and per-table statistic columns to devour_stats',
+			$migration->getDescription()
+		);
 	}
 
 
