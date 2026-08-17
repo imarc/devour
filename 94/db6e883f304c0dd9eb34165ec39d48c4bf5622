@@ -1,0 +1,58 @@
+src/Services/Analyzer.php
+  s_2be78ae8c252ee::t_c50f556b7d1698 153-192
+  s_2be78ae8c252ee::t_df9868e80a1c2b 203-213
+src/Synchronizer.php
+  s_2be78ae8c252ee::t_bde00aea79e58b 1665-1670
+  s_2be78ae8c252ee::t_4ab09817380cda 1705-1707,1709-1714
+  s_2be78ae8c252ee::t_510bfd1bd42c59 918-922
+  s_2be78ae8c252ee::t_2692dba5fab211 119-141
+  s_2be78ae8c252ee::t_417677465ad56d 1386,1388,1391-1393,1395,1399-1405
+  s_2be78ae8c252ee::t_f266c6b047ec28 1845-1846,1848-1853
+  s_2be78ae8c252ee::t_5e21eb43a5f2e3 1760-1762,1764-1769,1773-1778
+  s_2be78ae8c252ee::t_5f03c41c8e0d56 1360,1365-1367
+  s_2be78ae8c252ee::t_c4e45c7aca2663 1591-1592,1597-1602
+  s_2be78ae8c252ee::t_e80364fd5bb2a8 27-55
+  s_2be78ae8c252ee::t_8006d53f99ebb2 26,118,1083,1221-1329
+  s_2be78ae8c252ee::t_b545d4c32640ca 939-943
+  s_2be78ae8c252ee::t_b845b2951e6b19 1510-1511
+  s_2be78ae8c252ee::t_f72a73d8bf6947 1543-1544
+  s_2be78ae8c252ee::t_1bcb3dc53c2d98 624
+  s_2be78ae8c252ee::t_55aaf225f8e36c 667-668
+  s_2be78ae8c252ee::t_bc97de62f424e1 1084-1107,1111,1115-1212,1214-1220,1330-1345
+  s_2be78ae8c252ee::t_ae0e5eaef10d59 1635-1636,1638-1643
+  s_2be78ae8c252ee::t_8e97dae58c35f7 1797-1802
+  s_2be78ae8c252ee::t_19698a07700922 1879,1881,1883
+  s_2be78ae8c252ee::t_016a90a603cfc0 965-969
+test/routines/SynchronizerTest.php
+  s_2be78ae8c252ee::t_5ac89eb7e077a7 116-260
+  s_2be78ae8c252ee::t_b4533ed13178bd 22,42
+src/Migrations/MigrationRunner.php
+  s_2be78ae8c252ee::t_9e761f5af7d602 10
+  s_2be78ae8c252ee::t_812b87f2d6540d 99
+test/routines/MigrationRunnerTest.php
+  s_2be78ae8c252ee::t_e90c2749b855cb 91-103
+test/integration/MigrationRunnerIntegrationTest.php
+  s_2be78ae8c252ee::t_4b7bf435b69960 342
+  s_2be78ae8c252ee::t_1283da12732774 310-320
+  s_2be78ae8c252ee::t_dfe5d795ee3b6d 75,330
+src/Services/Run.php
+  s_2be78ae8c252ee::t_619d60c318d2a5 162-196
+src/Migrations/Versions/Migration003.php
+  s_2be78ae8c252ee::t_6f55b141d1fa70 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "94db6e883f304c0dd9eb34165ec39d48c4bf5622",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
