@@ -208,29 +208,39 @@ class Synchronizer
 	public function getSyncInterval($context = NULL, $mode = 'high'): ?int
 	{
 		$wheres = match ($context) {
-			'individual' => 'WHERE tables is not null and ids is not null',
-			'limited'    => 'WHERE tables is not null and ids is null',
-			default      => 'WHERE tables is null and ids is null'
+			'individual' => 'WHERE tables IS NOT NULL AND ids IS NOT NULL',
+			'limited'    => 'WHERE tables IS NOT NULL AND ids IS NULL',
+			default      => 'WHERE tables IS NULL AND ids IS NULL'
 		};
 
+		//
+		// EXTRACT returns a number directly.  This used to render a PostgreSQL interval and parse
+		// it with strtotime(), which reads "1 day 02:03:04" as a relative date.
+		//
 		$select = match ($mode) {
-			'high' => 'MAX(end_time - start_time) as result',
-			'average' => 'AVG(end_time - start_time) as result'
+			'high'    => 'MAX(EXTRACT(EPOCH FROM (end_time - start_time)))',
+			'average' => 'AVG(EXTRACT(EPOCH FROM (end_time - start_time)))',
+			default   => throw new \InvalidArgumentException(sprintf(
+				'Unknown sync interval mode "%s".',
+				$mode
+			))
 		};
 
-		$result = $this->destination->query(sprintf("
-			SELECT
-				%s
-			FROM
-				devour_stats
-			%s
-		", $select, $wheres));
+		$result = $this->destination->query(sprintf(
+			'SELECT %s AS result FROM devour_stats %s',
+			$select,
+			$wheres
+		))->fetch(PDO::FETCH_ASSOC);
 
-		if (!$result->rowCount()) {
+		//
+		// An aggregate over zero rows still returns one row holding NULL, so the rowCount() guard
+		// this used to carry never fired — it returned seconds-since-midnight garbage instead.
+		//
+		if (!$result || $result['result'] === NULL) {
 			return NULL;
 		}
 
-		return strtotime($result->fetch(PDO::FETCH_ASSOC)['result']) - strtotime('00:00:00');
+		return (int) $result['result'];
 	}
 
 
@@ -369,26 +379,18 @@ class Synchronizer
 	 */
 	public function getNextScheduled()
 	{
-		$result = $this->destination->query("
-			SELECT
-				id
-			FROM
-				devour_stats
-			WHRE 
-				start_time IS NULL
-			AND
-				scheduled_time IS NOT NULL
-			ORDER BY
-				scheduled_time desc
-			LIMIT
-				1
-		");
+		//
+		// This read "WHRE" and so had never executed successfully.  The ordering was DESC too,
+		// which would have returned the furthest-future row rather than the next one.
+		//
+		$result = $this->destination->query(
+			'SELECT id FROM devour_stats
+			 WHERE start_time IS NULL AND scheduled_time IS NOT NULL AND canceled_time IS NULL
+			 ORDER BY scheduled_time ASC
+			 LIMIT 1'
+		)->fetch(PDO::FETCH_ASSOC);
 
-		if (!$result->rowCount()) {
-			return NULL;
-		}
-
-		return (int) $result->fetch(PDO::FETCH_ASSOC)['id'];
+		return $result ? (int) $result['id'] : NULL;
 	}
 
 
@@ -877,44 +879,6 @@ class Synchronizer
 	/**
 	 *
 	 */
-	protected function hasStatsTable()
-	{
-		$this->destination->query("SELECT 1");
-
-		try {
-			$this->destination->query("SELECT 1 FROM devour_stats");
-
-			return TRUE;
-
-		} catch (PDOException $e) {
-			return FALSE;
-
-		}
-	}
-
-
-	/**
-	 *
-	 */
-	protected function hasUpdatesTable()
-	{
-		$this->destination->query("SELECT 1");
-
-		try {
-			$this->destination->query("SELECT 1 FROM devour_updates");
-
-			return TRUE;
-
-		} catch (PDOException $e) {
-			return FALSE;
-
-		}
-	}
-
-
-	/**
-	 * 
-	 */
 	protected function unsynced($name, $ids = null)
 	{
 		if ($ids) {
@@ -1219,9 +1183,17 @@ class Synchronizer
 
 		foreach ($delete_results as $deletion) {
 			try {
+				//
+				// Bound rather than escaped: pg_escape_string() comes from ext-pgsql, a separate
+				// extension from pdo_pgsql, and with no pgsql connection open it escapes without
+				// the connection's encoding context.
+				//
 				$key_wheres = [];
-				foreach ($mapping->getKey() as $key) {
-					$key_wheres[] = sprintf("%s = '%s'", $key,  pg_escape_string($deletion[$key]));
+				$key_values = [];
+
+				foreach (array_values($mapping->getKey()) as $i => $key) {
+					$key_wheres[]           = sprintf('%s = :key%d', $key, $i);
+					$key_values['key' . $i] = $deletion[$key];
 				}
 
 				$destination_delete_query = sprintf(
@@ -1230,7 +1202,9 @@ class Synchronizer
 					join(' AND ', $key_wheres)
 				);
 
-				$this->destination->query($destination_delete_query, PDO::FETCH_ASSOC);
+				$statement = $this->destination->prepare($destination_delete_query);
+				$statement->execute($key_values);
+
 			} catch (\Exception $e) {
 				$this->log(sprintf(
 					"Failed removing destination records with query: %s  The database returned: %s",

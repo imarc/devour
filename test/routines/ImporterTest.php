@@ -32,16 +32,6 @@ class TestImporter extends Devour\Importer
 	}
 
 
-	protected function hasStatsTable()
-	{
-		return TRUE;
-	}
-
-	protected function hasUpdatesTable()
-	{
-		return TRUE;
-	}
-
 	public function callBeforeSyncMapping(Devour\Mapping $mapping)
 	{
 		$this->beforeSyncMapping($mapping);
