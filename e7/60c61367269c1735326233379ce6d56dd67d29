@@ -1,0 +1,23 @@
+test/routines/RunTest.php
+  s_2be78ae8c252ee::t_11b20254818214 87-112
+src/Synchronizer.php
+  s_2be78ae8c252ee::t_17de8760e36cbe 189
+src/Services/Run.php
+  s_2be78ae8c252ee::t_95d5457883a895 198-230
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e760c61367269c1735326233379ce6d56dd67d29",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
