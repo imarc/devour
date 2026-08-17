@@ -58,6 +58,14 @@ Validation checks that the existing schema is *functionally* compatible with Dev
 
 If the existing schema is genuinely incompatible — a missing column, an unexpected column, an incompatible type, the wrong primary key, or an `id` that does not populate itself — deployment fails without changing it. Back up and delete or rename the Devour tables, then rerun the migration step to create fresh tables.
 
+### Upgrading To 5.0.0
+
+5.0.0 adds `Migration002` (`canceled_time`, `canceled_by`, `heartbeat`, `max_gap`). The API additions are backwards compatible, but `assertReady()` refuses any database with a pending migration — so `Synchronizer`, `Importer`, `Analyzer`, and `Supervisor` all fail to construct until migrations run. Upgrading the package alone takes syncing down.
+
+Per site: update the package, run `MigrationRunner::migrate()`, and only then start sync workers.
+
+Rolling back is **not** symmetrical. `validateAppliedVersions()` treats a recorded migration the installed library does not know about as code and schema drifting out of step, so a database carrying migration 2 refuses to work with a 4.x library. To roll back, delete the row with `id = 2` from `devour_migrations`; the added columns are harmless left in place.
+
 ### Runtime Failures
 
 Devour never changes schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, or newer than the installed library. Treat this as a deployment failure: run migrations with the matching library release, then start application processes.
@@ -74,6 +82,46 @@ try {
 	throw $exception;
 }
 ```
+
+## Cancelling A Stuck Sync
+
+`Supervisor` reads and cancels runs. Like `Analyzer`, it needs only the destination connection — no mappings, no source database.
+
+```php
+use Devour\Run;
+use Devour\Supervisor;
+
+$supervisor = new Supervisor($database);
+
+foreach ($supervisor->findRunning() as $run) {
+	echo $run->getSummary() . PHP_EOL;
+
+	if ($run->getConfidence() === Run::STUCK) {
+		$cancelled = $supervisor->cancel($run->getId(), 'ops@example.com');
+
+		// $cancelled->getLog() holds the run's log, preserved on the row.
+	}
+}
+```
+
+A cancellation sets `canceled_time` and leaves `end_time` NULL, so cancelled runs stay out of the duration history that `getSyncInterval()` derives from `MAX(end_time - start_time)`. A run that sat dead for three days therefore cannot redefine what "normal" looks like.
+
+Cancellation is cooperative. `Synchronizer` guards the UPDATE it already issues on every log line with `AND canceled_time IS NULL`, so a still-running worker sees a zero row count, throws `Devour\CanceledException`, and stops at its next log line without stamping `end_time`.
+
+### Staleness
+
+`getConfidence()` returns `Run::HEALTHY`, `Run::SUSPECT`, `Run::STUCK`, or `Run::UNKNOWN`. It compares how long a run has been silent against the largest gap between log lines that a completed run of the same shape has ever recorded, tracked live in `max_gap`:
+
+```
+silence  = now − COALESCE(heartbeat, start_time)
+baseline = MAX(max_gap) over completed runs of the same context
+```
+
+Runs are bucketed by context — a full sync, a table-limited sync, and a single-record sync have legitimately different log cadences — matching how `getSyncInterval()` buckets durations. Silence under `Run::SILENCE_FLOOR` (300s) is always healthy, so a site whose gaps are measured in seconds does not flap.
+
+The verdict is **advisory**. `cancel()` will stop any running sync regardless of what `getConfidence()` says; the signal exists to inform an operator, not to gate them.
+
+`max_gap` cannot be contaminated by the stalls it detects: it only ever grows from an interval that was actually observed between two written lines, and a worker that dies writes nothing further.
 
 ## CSV Source Imports
 
