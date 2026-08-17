@@ -1,0 +1,21 @@
+test/routines/SupervisorTest.php
+  s_2be78ae8c252ee::t_836199de00fab0 1-148
+src/Services/Supervisor.php
+  s_2be78ae8c252ee::t_72f98c75c0594c 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "28db7580c8edf5c9d6a5768dbd4b5dc98dc5bb90",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
