@@ -30,7 +30,8 @@ class MigrationRunner
 				self::createLedger($database, $schema);
 			});
 			$applied = self::applied($database, $schema);
-			self::validateApplied($migrations, $applied);
+			self::validateAppliedVersions($migrations, $applied);
+			self::validateAppliedChecksums($migrations, $applied);
 
 			foreach ($migrations as $migration) {
 				if (isset($applied[$migration->getId()])) {
@@ -59,6 +60,16 @@ class MigrationRunner
 	}
 
 
+	/**
+	 * Assert the database is migrated far enough for the installed library to run against it.
+	 *
+	 * This runs on every Synchronizer and Analyzer construction, so it deliberately checks less
+	 * than migrate() does.  It answers the question runtime actually cares about — is the schema
+	 * this code expects present — through the recorded migration ids.  Whether an applied
+	 * migration's source file has since been edited is a deployment-integrity question with no
+	 * runtime consequence, and failing it here would take every consumer down at once rather than
+	 * failing the deployment that introduced it.  migrate() validates checksums instead.
+	 */
 	public static function assertReady(PDO $database): void
 	{
 		self::assertPostgres($database);
@@ -71,7 +82,7 @@ class MigrationRunner
 		}
 
 		$applied = self::applied($database, $schema);
-		self::validateApplied($migrations, $applied);
+		self::validateAppliedVersions($migrations, $applied);
 
 		foreach ($migrations as $migration) {
 			if (!isset($applied[$migration->getId()])) {
@@ -197,7 +208,34 @@ class MigrationRunner
 	}
 
 
-	private static function validateApplied(array $migrations, array $applied): void
+	/**
+	 * Assert the database records no migration the installed library does not know about.
+	 *
+	 * This catches code and schema drifting out of step, which matters everywhere Devour runs.
+	 */
+	private static function validateAppliedVersions(array $migrations, array $applied): void
+	{
+		$known = [];
+		foreach ($migrations as $migration) {
+			$known[$migration->getId()] = TRUE;
+		}
+
+		foreach ($applied as $id => $checksum) {
+			if (!isset($known[$id])) {
+				throw new MigrationException(sprintf('Devour database migration %d is newer than installed Devour.', $id));
+			}
+		}
+	}
+
+
+	/**
+	 * Assert no applied migration's source has changed since it was recorded.
+	 *
+	 * Migrations are forward-only, so an applied migration whose file no longer hashes to what was
+	 * recorded means the history was rewritten and the database may no longer match what the file
+	 * now describes.  That is only actionable during deployment, so only migrate() calls this.
+	 */
+	private static function validateAppliedChecksums(array $migrations, array $applied): void
 	{
 		$known = [];
 		foreach ($migrations as $migration) {
@@ -205,11 +243,7 @@ class MigrationRunner
 		}
 
 		foreach ($applied as $id => $checksum) {
-			if (!isset($known[$id])) {
-				throw new MigrationException(sprintf('Devour database migration %d is newer than installed Devour.', $id));
-			}
-
-			if (!hash_equals($known[$id], trim($checksum))) {
+			if (isset($known[$id]) && !hash_equals($known[$id], trim($checksum))) {
 				throw new MigrationException(sprintf('Devour migration %d checksum does not match; migration history changed.', $id));
 			}
 		}

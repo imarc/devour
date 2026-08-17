@@ -224,6 +224,71 @@ final class MigrationRunnerIntegrationTest extends TestCase
 	}
 
 
+	/**
+	 * A rewritten migration history is a deployment problem, so it fails the deployment.
+	 */
+	public function testMigrateRejectsAppliedMigrationWhoseSourceChanged(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+		$this->rewriteAppliedChecksum();
+
+		$this->expectException(Devour\Migrations\MigrationException::class);
+		$this->expectExceptionMessage('checksum does not match');
+
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+	}
+
+
+	/**
+	 * Runtime does not police it, though.  The schema is present and correct either way, and
+	 * failing here would take every consumer down instead of failing one deployment.
+	 */
+	public function testReadinessToleratesAppliedMigrationWhoseSourceChanged(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+		$this->rewriteAppliedChecksum();
+
+		Devour\Migrations\MigrationRunner::assertReady($this->database);
+
+		$this->assertInstanceOf(Devour\Synchronizer::class, new Devour\Synchronizer($this->database, $this->database));
+		$this->assertInstanceOf(Devour\Analyzer::class, new Devour\Analyzer($this->database));
+	}
+
+
+	/**
+	 * Version skew still fails everywhere: a database migrated by a newer Devour than the one
+	 * installed is a real runtime hazard, not just a deployment one.
+	 */
+	public function testReadinessRejectsMigrationFromNewerDevour(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+		$this->database->exec("INSERT INTO devour_migrations (id, checksum, description, applied_at) VALUES (99, repeat('0', 64), 'From the future', CURRENT_TIMESTAMP)");
+
+		$this->expectException(Devour\Migrations\MigrationException::class);
+		$this->expectExceptionMessage('newer than installed Devour');
+
+		Devour\Migrations\MigrationRunner::assertReady($this->database);
+	}
+
+
+	public function testReadinessRejectsPendingMigration(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+		$this->database->exec('DELETE FROM devour_migrations WHERE id = 1');
+
+		$this->expectException(Devour\Migrations\MigrationException::class);
+		$this->expectExceptionMessage('Devour migration 1 is pending');
+
+		Devour\Migrations\MigrationRunner::assertReady($this->database);
+	}
+
+
+	private function rewriteAppliedChecksum(): void
+	{
+		$this->database->exec("UPDATE devour_migrations SET checksum = repeat('a', 64) WHERE id = 1");
+	}
+
+
 	private function createLegacyStats(string $sequence, string $options): void
 	{
 		$this->database->exec(trim(sprintf('CREATE SEQUENCE %s %s', $sequence, $options)));

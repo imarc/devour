@@ -60,7 +60,11 @@ If the existing schema is genuinely incompatible — a missing column, an unexpe
 
 ### Runtime Failures
 
-Devour never changes schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, altered, or newer than the installed library. Treat this as a deployment failure: run migrations with the matching library release, then start application processes.
+Devour never changes schema during normal runtime. Construction throws `Devour\Migrations\MigrationException` when migrations are missing, pending, or newer than the installed library. Treat this as a deployment failure: run migrations with the matching library release, then start application processes.
+
+`migrate()` validates more than construction does. It also verifies that every applied migration's source still hashes to the checksum recorded in `devour_migrations`, and fails with `Devour migration N checksum does not match` when it does not. That check is deliberately confined to deployment: an edited migration file means the recorded history no longer describes the database, which is actionable while deploying and has no runtime consequence. Enforcing it at construction time would instead take every running consumer down at once, long after the deployment that caused it.
+
+If you hit a checksum failure, either restore the migration file to its applied form, or — if the edit was intentional and the schema it produces is unchanged — reconcile `devour_migrations` before deploying again.
 
 ```php
 try {
