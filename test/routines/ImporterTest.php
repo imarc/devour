@@ -104,7 +104,7 @@ final class ImporterTest extends TestCase
 	public function testRunCanSetDriverAtRuntime()
 	{
 		$database = new PDO('sqlite::memory:');
-		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
+		$database->exec('CREATE TABLE devour_stats (id INTEGER PRIMARY KEY AUTOINCREMENT, start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT, canceled_time TEXT, canceled_by TEXT, heartbeat TEXT, max_gap INTEGER, tables TEXT, ids TEXT, force INTEGER, log TEXT)');
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TEXT)');
 
 		$importer = new TestImporter($database);

@@ -15,6 +15,25 @@ class Synchronizer
 {
 	const SLEEP_TIME  = 0;
 
+
+	/**
+	 * Every devour_stats column Synchronizer writes through statSet().
+	 *
+	 * Listed once so INSERT and UPDATE cannot drift apart, and so adding a column is one edit
+	 * rather than two.  heartbeat and max_gap are absent deliberately: they are maintained by
+	 * logAppend(), not by statSet().
+	 */
+	const STAT_COLUMNS = [
+		'start_time',
+		'scheduled_by',
+		'scheduled_time',
+		'end_time',
+		'tables',
+		'ids',
+		'force',
+		'log',
+	];
+
 	/**
 	 *
 	 */
@@ -585,6 +604,10 @@ class Synchronizer
 				'scheduled_by'   => NULL,
 				'scheduled_time' => NULL,
 				'end_time'       => NULL,
+				'canceled_time'  => NULL,
+				'canceled_by'    => NULL,
+				'heartbeat'      => NULL,
+				'max_gap'        => NULL,
 				'tables'         => NULL,
 				'ids'            => NULL,
 				'log'            => NULL,
@@ -617,39 +640,48 @@ class Synchronizer
 			$this->stat['force'] = $this->stat['force'] ? '1' : '0';
 		}
 
+		//
+		// Bound explicitly rather than passing $this->stat wholesale: the in-memory stat also
+		// carries heartbeat, max_gap and id, and handing a statement parameters it does not
+		// reference is an error.
+		//
+		$params = [];
+
+		foreach (self::STAT_COLUMNS as $name) {
+			$params[$name] = $this->stat[$name] ?? NULL;
+		}
+
 		if (array_key_exists('new', $this->stat)) {
 			unset($this->stat['new']);
 
-			$insert_statement  = $this->destination->prepare("
-				INSERT INTO 
-					devour_stats 
-					(start_time, scheduled_by, scheduled_time, end_time, tables, ids, force, log)
-					VALUES
-						(:start_time, :scheduled_by, :scheduled_time, :end_time, :tables, :ids, :force, :log)
-			");
+			$insert_statement = $this->destination->prepare(sprintf(
+				'INSERT INTO devour_stats (%s) VALUES (%s)',
+				join(', ', self::STAT_COLUMNS),
+				':' . join(', :', self::STAT_COLUMNS)
+			));
 
-			$insert_statement->execute($this->stat);
+			$insert_statement->execute($params);
 
 			$this->stat['id'] = $this->destination->lastInsertId();
 
 		} else {
-			$update_statement = $this->destination->prepare("
-				UPDATE 
-					devour_stats 
-				SET 
-					start_time = :start_time, 
-					scheduled_by = :scheduled_by,
-					scheduled_time = :scheduled_time, 
-					end_time = :end_time, 
-					tables = :tables, 
-					ids = :ids,
-					force = :force,
-					log = :log 
-				WHERE 
-					id = :id
-			");
+			$sets = array_map(function ($name) {
+				return sprintf('%s = :%s', $name, $name);
+			}, self::STAT_COLUMNS);
 
-			$update_statement->execute($this->stat);
+			$update_statement = $this->destination->prepare(sprintf(
+				'UPDATE devour_stats SET %s WHERE id = :id AND canceled_time IS NULL',
+				join(', ', $sets)
+			));
+
+			$update_statement->execute($params + ['id' => $this->stat['id']]);
+
+			if ($update_statement->rowCount() < 1) {
+				throw new CanceledException(sprintf(
+					'Sync %s was cancelled.',
+					$this->stat['id']
+				));
+			}
 		}
 	}
 
@@ -959,12 +991,84 @@ class Synchronizer
 	/**
 	 *
 	 */
+	protected function now(): int
+	{
+		return time();
+	}
+
+
+	/**
+	 *
+	 */
 	protected function log($message)
 	{
-		$line = sprintf('[%s] %s', date('h:i:s'), $message . PHP_EOL);
+		$line = sprintf('[%s] %s', date('Y-m-d H:i:s', $this->now()), $message . PHP_EOL);
 
 		echo $line;
-		$this->statSet('log', $this->statGet('log') . $line);
+
+		$this->logAppend($line);
+	}
+
+
+	/**
+	 * Append one line to the run's log, and stamp its liveness.
+	 *
+	 * The log is concatenated in the database rather than read, appended in PHP and written back.
+	 * The old approach resent the entire accumulated log on every line, so write volume grew with
+	 * the square of the log length.
+	 *
+	 * heartbeat and max_gap ride along on this UPDATE because it already runs on every line, which
+	 * makes liveness tracking free.  max_gap only ever grows from an interval that was actually
+	 * observed, so a run that dies contributes nothing to it.
+	 */
+	protected function logAppend(string $line): void
+	{
+		$now   = $this->now();
+		$stamp = date('Y-m-d H:i:s', $now);
+
+		$this->stat['log'] = ($this->stat['log'] ?? '') . $line;
+
+		if (empty($this->stat['id'])) {
+			return;
+		}
+
+		$gap = NULL;
+
+		if (!empty($this->stat['heartbeat'])) {
+			$gap = $now - strtotime($this->stat['heartbeat']);
+		}
+
+		//
+		// The running maximum is resolved here rather than in SQL: a CASE would need the gap bound
+		// three times in one statement, and PDO's SQLite driver will not reuse a named parameter.
+		// Only the run's own worker writes these columns, so there is nothing to race with.
+		//
+		$max = max((int) ($this->stat['max_gap'] ?? 0), $gap === NULL ? 0 : $gap);
+
+		$statement = $this->destination->prepare(
+			"UPDATE devour_stats
+			 SET log = COALESCE(log, '') || :line,
+			     heartbeat = :heartbeat,
+			     max_gap = :max_gap
+			 WHERE id = :id AND canceled_time IS NULL"
+		);
+
+		$statement->execute([
+			'line'      => $line,
+			'heartbeat' => $stamp,
+			'max_gap'   => $max,
+			'id'        => $this->stat['id'],
+		]);
+
+		if ($statement->rowCount() < 1) {
+			throw new CanceledException(sprintf(
+				'Sync %s was cancelled.',
+				$this->stat['id']
+			));
+		}
+
+		$this->stat['heartbeat'] = $stamp;
+		$this->stat['max_gap']   = $max;
 	}
 
 
