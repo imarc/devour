@@ -14,9 +14,12 @@ use Devour\Migrations\MigrationRunner;
 class Analyzer
 {
 	/**
+	 * Log lines carry a full Y-m-d H:i:s stamp.
 	 *
+	 * They used to carry a 12-hour clock with no meridiem and no date, so a log spanning noon
+	 * appeared to run backwards and any gap over 12 hours read as a short one.
 	 */
-	const LOG_PARSE = "/\[([0-9:]+)\][\s\.]+([^\s]+)\s+([0-9]*)\s*(.*)/";
+	const LOG_PARSE = "/\[([0-9\-: ]+)\][\s\.]+([^\s]+)\s+([0-9]*)\s*(.*)/";
 
 
 	/**
@@ -65,9 +68,20 @@ class Analyzer
 	 */
 	public function __construct(PDO $database)
 	{
-		MigrationRunner::assertReady($database);
+		$this->assertMigrationReady($database);
+
 		$this->database = $database;
+
 		$this->parseLogs();
+	}
+
+
+	/**
+	 * Overridable so unit tests can drive this class on SQLite.
+	 */
+	protected function assertMigrationReady(PDO $database): void
+	{
+		MigrationRunner::assertReady($database);
 	}
 
 
@@ -147,7 +161,13 @@ class Analyzer
 
 		foreach ($rows as $result) {
 			$result_data = [];
-			$lines = explode("\n", $result['log']);
+			$lines       = explode("\n", (string) $result['log']);
+
+			//
+			// $table carried across rows before this, so a run whose log parsed to nothing
+			// inherited the previous run's tables and reported them under the wrong run.
+			//
+			unset($table);
 
 			foreach ($lines as $line) {
 				$parse = [];
@@ -197,9 +217,13 @@ class Analyzer
 
 			if (isset($table)) {
 				$result_data[] = $table;
-				$this->data[]        = [
+				$this->data[] = [
 					'start_time' => new DateTime($result['start_time']),
-					'end_time'   => new DateTime($result['end_time']),
+					//
+					// An open run has no end time.  Passing NULL here yielded "now", so a sync
+					// still in flight reported a completed duration.
+					//
+					'end_time'   => $result['end_time'] ? new DateTime($result['end_time']) : NULL,
 					'log'        => $result_data
 				];
 

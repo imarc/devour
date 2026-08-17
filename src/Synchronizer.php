@@ -659,25 +659,23 @@ class Synchronizer
 	 */
 	public function updateGet(string $table): string
 	{
-		$time   = '1800-01-01 00:00:00';
-		$result = $this->destination
-			->query(sprintf(
-				"SELECT * FROM devour_updates WHERE target = '%s' LIMIT 1",
-				$table
-			))
-			->fetch(PDO::FETCH_ASSOC)
-		;
+		$time = '1800-01-01 00:00:00';
+
+		$statement = $this->destination->prepare(
+			'SELECT * FROM devour_updates WHERE target = :target LIMIT 1'
+		);
+		$statement->execute(['target' => $table]);
+
+		$result = $statement->fetch(PDO::FETCH_ASSOC);
 
 		if ($result) {
-			$time = $result['time'];
-
-		} else {
-			$this->destination->query(sprintf(
-				"INSERT INTO devour_updates (target, time) VALUES('%s', '%s')",
-				$table,
-				$time
-			));
+			return $result['time'];
 		}
+
+		$insert = $this->destination->prepare(
+			'INSERT INTO devour_updates (target, time) VALUES (:target, :time)'
+		);
+		$insert->execute(['target' => $table, 'time' => $time]);
 
 		return $time;
 	}
@@ -688,11 +686,17 @@ class Synchronizer
 	 */
 	public function updateSet(string $table, string $time): void
 	{
-		$this->destination->query(sprintf(
-			"UPDATE devour_updates SET TIME = '%s' WHERE target ='%s'",
-			date("Y-m-d H:i:s"),
-			$table
-		));
+		//
+		// $time is the moment the sync STARTED, not the moment it finished.  syncMapping() captures
+		// it before doing any work so that records changed while the sync was running are picked up
+		// by the next run rather than skipped.  This method used to discard $time and write "now"
+		// instead, which advanced the watermark past those records permanently.
+		//
+		$statement = $this->destination->prepare(
+			'UPDATE devour_updates SET time = :time WHERE target = :target'
+		);
+
+		$statement->execute(['time' => $time, 'target' => $table]);
 	}
 
 	/**
@@ -1447,7 +1451,16 @@ class Synchronizer
 	protected function truncateTable(Mapping $mapping)
 	{
 		try {
-			$this->destination->query('TRUNCATE TABLE %s', $mapping->getDestination());
+			//
+			// This used to pass the table to query() as a second argument, where PDO expects a
+			// fetch mode — so the literal string "TRUNCATE TABLE %s" was executed every time, threw,
+			// and was swallowed by the catch below.
+			//
+			$this->destination->exec(sprintf(
+				'TRUNCATE TABLE %s',
+				$mapping->getDestination()
+			));
+
 		}  catch (\Exception $e) {
 			$this->log(sprintf('Could not truncate destination table: %s  The database returned: %s',
 				$mapping->getDestination(),

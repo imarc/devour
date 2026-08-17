@@ -149,6 +149,21 @@ final class SynchronizerTest extends TestCase
 	}
 
 
+	public function testUpdateSetWritesTheTimestampItWasGiven()
+	{
+		$database = $this->statsDatabase();
+		$database->exec("INSERT INTO devour_updates (target, time) VALUES ('people', '1800-01-01 00:00:00')");
+
+		$sync = new TestSynchronizer($database, $database);
+		$sync->updateSet('people', '2026-08-17 09:00:00');
+
+		$this->assertSame(
+			'2026-08-17 09:00:00',
+			$database->query("SELECT time FROM devour_updates WHERE target = 'people'")->fetchColumn()
+		);
+	}
+
+
 	public function testIsRunningIgnoresCancelledRows()
 	{
 		$database = $this->statsDatabase();
