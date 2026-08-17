@@ -21,10 +21,35 @@ class Run
 	const WHERE_RUNNING = 'start_time IS NOT NULL AND end_time IS NULL AND canceled_time IS NULL';
 
 
+	const HEALTHY = 'healthy';
+	const SUSPECT = 'suspect';
+	const STUCK   = 'stuck';
+	const UNKNOWN = 'unknown';
+
+
+	/**
+	 * Nothing rates worse than healthy before this much silence, whatever the baseline says.
+	 *
+	 * Without it a site whose largest recorded gap is two seconds would rate a seven-second pause
+	 * as stuck.
+	 */
+	const SILENCE_FLOOR = 300;
+
+
+	const SUSPECT_RATIO = 1.0;
+	const STUCK_RATIO   = 3.0;
+
+
 	/**
 	 *
 	 */
 	protected array $row = [];
+
+
+	/**
+	 *
+	 */
+	protected ?int $baseline = NULL;
 
 
 	/**
@@ -226,6 +251,110 @@ class Run
 		}
 
 		return ($now ?: time()) - strtotime($last);
+	}
+
+
+	/**
+	 *
+	 */
+	public function withBaseline(?int $baseline): self
+	{
+		$this->baseline = $baseline;
+
+		return $this;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getBaseline(): ?int
+	{
+		return $this->baseline;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getStallRatio(?int $now = NULL): ?float
+	{
+		$silence = $this->getSilence($now);
+
+		if ($silence === NULL || !$this->baseline) {
+			return NULL;
+		}
+
+		return $silence / $this->baseline;
+	}
+
+
+	/**
+	 * How confident we are that this run has stopped making progress.
+	 *
+	 * Every threshold biases toward HEALTHY.  The verdict never blocks a cancellation, so a false
+	 * healthy costs an operator one extra glance, while a false stuck on a cron running with
+	 * --cancel destroys work that was going fine.
+	 */
+	public function getConfidence(?int $now = NULL): string
+	{
+		if (!$this->isRunning()) {
+			return self::UNKNOWN;
+		}
+
+		$silence = $this->getSilence($now);
+
+		if ($silence === NULL || $this->baseline === NULL || $this->baseline <= 0) {
+			return self::UNKNOWN;
+		}
+
+		if ($silence < self::SILENCE_FLOOR) {
+			return self::HEALTHY;
+		}
+
+		$ratio = $silence / $this->baseline;
+
+		if ($ratio <= self::SUSPECT_RATIO) {
+			return self::HEALTHY;
+		}
+
+		if ($ratio <= self::STUCK_RATIO) {
+			return self::SUSPECT;
+		}
+
+		return self::STUCK;
+	}
+
+
+	/**
+	 *
+	 */
+	public function getSummary(?int $now = NULL): string
+	{
+		$confidence = $this->getConfidence($now);
+		$silence    = $this->getSilence($now);
+
+		if ($silence === NULL) {
+			return sprintf('Sync %s has not started.', $this->getId());
+		}
+
+		if ($this->baseline === NULL || $this->baseline <= 0) {
+			return sprintf(
+				'Sync %s: %s, silent %ds, no comparable history yet.',
+				$this->getId(),
+				$confidence,
+				$silence
+			);
+		}
+
+		return sprintf(
+			'Sync %s: %s, silent %ds against a %ds baseline (%.1fx).',
+			$this->getId(),
+			$confidence,
+			$silence,
+			$this->baseline,
+			$silence / $this->baseline
+		);
 	}
 
 
