@@ -23,6 +23,14 @@ class Migration001 implements Migration
 		'boolean'   => ['boolean'],
 	];
 
+	/**
+	 * The nine columns of the pre-migration schema.
+	 *
+	 * Do not add columns introduced by later migrations here.  This list validates a legacy schema
+	 * during baselining, which only ever happens before those migrations run, and assertColumns()
+	 * rejects anything unexpected — so adding Migration002's columns would fail every legacy
+	 * baseline.
+	 */
 	private const STATS_COLUMNS = [
 		'id'             => 'integer',
 		'start_time'     => 'timestamp',

@@ -2,6 +2,14 @@
 
 use PHPUnit\Framework\TestCase;
 
+class TestMigrationRunner extends Devour\Migrations\MigrationRunner
+{
+	public static function registry(): array
+	{
+		return static::migrations();
+	}
+}
+
 final class MigrationRunnerTest extends TestCase
 {
 	public function testMigrationTypesAreAvailable()
@@ -62,6 +70,25 @@ final class MigrationRunnerTest extends TestCase
 		$this->expectExceptionMessage('PostgreSQL');
 
 		new Devour\Analyzer($database);
+	}
+
+
+	public function testCancellationMigrationIsRegistered()
+	{
+		$migration = new Devour\Migrations\Versions\Migration002();
+
+		$this->assertSame(2, $migration->getId());
+		$this->assertSame(
+			'Add cancellation and heartbeat tracking to devour_stats',
+			$migration->getDescription()
+		);
+
+		$ids = array_map(
+			function ($registered) { return $registered->getId(); },
+			TestMigrationRunner::registry()
+		);
+
+		$this->assertSame([1, 2], $ids);
 	}
 
 
