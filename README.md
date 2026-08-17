@@ -123,6 +123,59 @@ The verdict is **advisory**. `cancel()` will stop any running sync regardless of
 
 `max_gap` cannot be contaminated by the stalls it detects: it only ever grows from an interval that was actually observed between two written lines, and a worker that dies writes nothing further.
 
+## Syncing A Subset
+
+`run()` accepts specific ids, syncing only those rows rather than whole tables. Two mapping settings control what comes along with them.
+
+### `require` — rows this table depends on
+
+Tables that must be populated first, typically to satisfy foreign keys. Synced **before** this mapping. Each entry must use the object form:
+
+```jin
+require = [
+	{ "table": "event_levels", "source": "sycod.code", "key": "level" }
+]
+```
+
+- **`source`** — a column in the dependency's own `FROM` clause
+- **`key`** — the field alias on *this* mapping that it joins against
+
+A bare table name (`"event_levels"`) also parses, but gives Devour no way to work out which rows a subset needs — so it falls back to syncing that **entire table**. One entry in bare form turns a single-record sync into a full sync of that dependency, which is rarely what a subset sync is for. Use the object form unless you genuinely want the whole table every time.
+
+Only declare a dependency the mapping actually references. If there is no field pointing at it, there is no foreign key to satisfy and nothing to join on.
+
+### `adjunct` — rows that depend on this table
+
+Child records, synced **after** this mapping, and only when a subset is being synced — a full sync covers them anyway:
+
+```jin
+adjunct = {
+	"event_sessions": { "source": "event.control" }
+}
+```
+
+- **`source`** — the column in the adjunct's own source that points back at this table's key
+
+Without adjuncts, a subset sync updates the parent rows alone and leaves their children stale until the next full sync.
+
+Adjuncts do not chain: an adjunct's own adjuncts are not followed, so a subset sync stays bounded.
+
+### Estimating How Long A Sync Will Take
+
+`getSyncInterval($context, $mode)` reports how long runs of a given shape take, and `getCompletionTime($context)` turns that into an expected finish time for the run in flight. Runs are bucketed so a sync is only compared against its own shape:
+
+| Context | Meaning |
+|---|---|
+| `individual` | specific tables, specific ids |
+| `limited` | specific tables, all ids |
+| `NULL` | a full sync |
+
+An **empty JSON list counts as unspecified**. `schedule()` stores `json_encode($mappings)`, so a full sync scheduled through a UI arrives as the string `'[]'` rather than `NULL`; treating that as "specific tables" files hours-long full syncs into the bucket a single-table sync is estimated from.
+
+`'high'` mode returns the **90th percentile of the most recent `Synchronizer::INTERVAL_SAMPLE` runs**, not the maximum over all history. A maximum lets one anomalous run set the ceiling permanently and counts runs that barely started — a full sync that died after five seconds otherwise sits in the same history as the two-hour ones. A percentile absorbs both without needing a threshold for what counts as a real run.
+
+Both methods return `NULL` when a context has no completed runs yet. Handle that rather than coercing it to a number: `start_time + 0` renders as a completion estimate that has already passed.
+
 ## CSV Source Imports
 
 Use `Devour\Importer` for file workflows. It extends `Synchronizer`, uses a single database connection for both source and destination, and stages file data in the destination database through a pluggable file driver.
