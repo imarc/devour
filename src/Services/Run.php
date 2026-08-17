@@ -21,6 +21,21 @@ class Run
 	const WHERE_RUNNING = 'start_time IS NOT NULL AND end_time IS NULL AND canceled_time IS NULL';
 
 
+	/**
+	 * Context predicates, as SQL, keyed the way getContext() names them.
+	 *
+	 * An empty JSON list counts as "not specified".  schedule() stores json_encode($mappings), so a
+	 * full sync scheduled through a UI arrives as the string '[]' rather than NULL, and testing only
+	 * for NULL filed those runs under 'limited' — mixing hours-long full syncs into the bucket a
+	 * single-table sync is estimated from.
+	 */
+	const WHERE_CONTEXT = [
+		'individual' => "(tables IS NOT NULL AND tables <> '[]') AND (ids IS NOT NULL AND ids <> '[]')",
+		'limited'    => "(tables IS NOT NULL AND tables <> '[]') AND (ids IS NULL OR ids = '[]')",
+		''           => "(tables IS NULL OR tables = '[]')",
+	];
+
+
 	const HEALTHY = 'healthy';
 	const SUSPECT = 'suspect';
 	const STUCK   = 'stuck';
@@ -188,11 +203,24 @@ class Run
 	 */
 	public function getContext(): ?string
 	{
-		if ($this->getTables() === NULL) {
+		if ($this->isEmptyList($this->getTables())) {
 			return NULL;
 		}
 
-		return $this->getIds() === NULL ? 'limited' : 'individual';
+		return $this->isEmptyList($this->getIds()) ? 'limited' : 'individual';
+	}
+
+
+	/**
+	 * Is this column unset, or set to an empty JSON list?
+	 *
+	 * Compared as a literal string rather than decoded, so this stays identical to the SQL in
+	 * WHERE_CONTEXT.  json_encode() emits exactly '[]' for an empty array, so there is no other
+	 * spelling to account for.
+	 */
+	protected function isEmptyList(?string $json): bool
+	{
+		return $json === NULL || $json === '[]';
 	}
 
 

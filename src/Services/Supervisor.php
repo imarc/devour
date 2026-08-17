@@ -14,19 +14,6 @@ use Devour\Migrations\MigrationRunner;
 class Supervisor
 {
 	/**
-	 * Historical buckets, keyed by Run::getContext().
-	 *
-	 * Mirrors Synchronizer::getSyncInterval() so a run is only ever compared against runs of its
-	 * own shape.
-	 */
-	const CONTEXTS = [
-		'individual' => 'tables IS NOT NULL AND ids IS NOT NULL',
-		'limited'    => 'tables IS NOT NULL AND ids IS NULL',
-		''           => 'tables IS NULL AND ids IS NULL',
-	];
-
-
-	/**
 	 *
 	 */
 	protected PDO $database;
@@ -158,7 +145,7 @@ class Supervisor
 			return $this->baselines[$key];
 		}
 
-		$where = self::CONTEXTS[$key] ?? self::CONTEXTS[''];
+		$where = Run::WHERE_CONTEXT[$key] ?? Run::WHERE_CONTEXT[''];
 
 		$result = $this->database->query(sprintf(
 			'SELECT MAX(max_gap) AS baseline FROM devour_stats

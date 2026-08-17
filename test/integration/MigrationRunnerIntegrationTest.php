@@ -363,8 +363,81 @@ final class MigrationRunnerIntegrationTest extends TestCase
 
 		$sync = new Devour\Synchronizer($this->database, $this->database);
 
-		$this->assertSame(2700, $sync->getSyncInterval());
+		// p90 across 600s and 2700s
+		$this->assertSame(2490, $sync->getSyncInterval());
 		$this->assertSame(1650, $sync->getSyncInterval(NULL, 'average'));
+	}
+
+
+	/**
+	 * A full sync scheduled through schedule() stores '[]', not NULL.
+	 *
+	 * Before this was accounted for, those runs were filed under 'limited', so a genuine
+	 * single-table sync inherited the duration of hours-long full syncs.
+	 */
+	public function testEmptyTablesListCountsAsAFullSync(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$this->database->exec(
+			"INSERT INTO devour_stats (start_time, end_time, tables)
+			 VALUES ('2026-08-17 01:00:00', '2026-08-17 03:00:00', '[]'),
+			        ('2026-08-17 04:00:00', '2026-08-17 06:00:00', NULL),
+			        ('2026-08-17 07:00:00', '2026-08-17 07:02:00', '[\"people\"]')"
+		);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		// both two-hour runs are full syncs; only the two-minute one is limited
+		$this->assertSame(7200, $sync->getSyncInterval());
+		$this->assertSame(120,  $sync->getSyncInterval('limited'));
+	}
+
+
+	/**
+	 * A single anomalous run must not set the ceiling for every later estimate.
+	 */
+	public function testSyncIntervalIsNotDominatedByOneOutlier(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$values = [];
+
+		for ($i = 1; $i <= 12; $i++) {
+			$values[] = sprintf(
+				"('2026-08-%02d 01:00:00', '2026-08-%02d 02:00:00', NULL)",
+				$i,
+				$i
+			);
+		}
+
+		// one run that took ten hours
+		$values[] = "('2026-08-13 01:00:00', '2026-08-13 11:00:00', NULL)";
+
+		$this->database->exec(
+			'INSERT INTO devour_stats (start_time, end_time, tables) VALUES ' . join(', ', $values)
+		);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		$this->assertLessThan(36000, $sync->getSyncInterval());
+	}
+
+
+	public function testCompletionTimeIsNullWithoutComparableHistory(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$this->database->exec(
+			"INSERT INTO devour_stats (start_time, tables, ids)
+			 VALUES ('2026-08-17 09:00:00', '[\"people\"]', '[{\"id\":1}]')"
+		);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		$this->assertTrue($sync->isRunning());
+		$this->assertNull($sync->getSyncInterval('individual'));
+		$this->assertNull($sync->getCompletionTime('individual'));
 	}
 
 

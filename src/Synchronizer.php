@@ -23,6 +23,15 @@ class Synchronizer
 	 * rather than two.  heartbeat and max_gap are absent deliberately: they are maintained by
 	 * logAppend(), not by statSet().
 	 */
+	/**
+	 * How many recent completed runs an interval estimate is drawn from.
+	 *
+	 * Counted in runs rather than measured in days so that a site syncing weekly still has a
+	 * usable sample.
+	 */
+	const INTERVAL_SAMPLE = 20;
+
+
 	const STAT_COLUMNS = [
 		'start_time',
 		'scheduled_by',
@@ -207,29 +216,41 @@ class Synchronizer
 	 */
 	public function getSyncInterval($context = NULL, $mode = 'high'): ?int
 	{
-		$wheres = match ($context) {
-			'individual' => 'WHERE tables IS NOT NULL AND ids IS NOT NULL',
-			'limited'    => 'WHERE tables IS NOT NULL AND ids IS NULL',
-			default      => 'WHERE tables IS NULL AND ids IS NULL'
-		};
+		$where = Run::WHERE_CONTEXT[(string) $context] ?? Run::WHERE_CONTEXT[''];
 
 		//
-		// EXTRACT returns a number directly.  This used to render a PostgreSQL interval and parse
-		// it with strtotime(), which reads "1 day 02:03:04" as a relative date.
+		// The 90th percentile rather than the maximum.
+		//
+		// MAX let a single anomalous run set the ceiling permanently, and it counted runs that
+		// barely started: a full sync that died after five seconds sat in the same history as the
+		// two-hour ones.  A percentile absorbs both without needing a threshold for what counts as
+		// a real run — measured against this data, filtering short runs out explicitly changed the
+		// result by zero seconds.
 		//
 		$select = match ($mode) {
-			'high'    => 'MAX(EXTRACT(EPOCH FROM (end_time - start_time)))',
-			'average' => 'AVG(EXTRACT(EPOCH FROM (end_time - start_time)))',
+			'high'    => 'percentile_cont(0.9) WITHIN GROUP (ORDER BY seconds)',
+			'average' => 'AVG(seconds)',
 			default   => throw new \InvalidArgumentException(sprintf(
 				'Unknown sync interval mode "%s".',
 				$mode
 			))
 		};
 
+		//
+		// Bounded to the most recent runs so the estimate tracks how long syncs take now, rather
+		// than being anchored to whatever the slowest run in all of history happened to be.
+		//
 		$result = $this->destination->query(sprintf(
-			'SELECT %s AS result FROM devour_stats %s',
+			'SELECT %s AS result FROM (
+				SELECT EXTRACT(EPOCH FROM (end_time - start_time)) AS seconds
+				FROM devour_stats
+				WHERE end_time IS NOT NULL AND %s
+				ORDER BY start_time DESC
+				LIMIT %d
+			) recent',
 			$select,
-			$wheres
+			$where,
+			self::INTERVAL_SAMPLE
 		))->fetch(PDO::FETCH_ASSOC);
 
 		//
@@ -255,7 +276,18 @@ class Synchronizer
 			return NULL;
 		}
 
-		return strtotime($run->getStartTime()) + (int) $this->getSyncInterval($context);
+		$interval = $this->getSyncInterval($context);
+
+		//
+		// No history for this context means no estimate.  Casting NULL to int here would return
+		// the run's own start time, which reads as a real completion estimate that has already
+		// passed rather than as "unknown".
+		//
+		if ($interval === NULL) {
+			return NULL;
+		}
+
+		return strtotime($run->getStartTime()) + $interval;
 	}
 
 	/**

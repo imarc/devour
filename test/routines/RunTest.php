@@ -69,6 +69,21 @@ final class RunTest extends TestCase
 	}
 
 
+	/**
+	 * schedule() stores json_encode($mappings), so a full sync arrives as '[]' rather than NULL.
+	 */
+	public function testEmptyJsonListsCountAsUnspecified()
+	{
+		$this->assertNull((new Devour\Run($this->row(['tables' => '[]'])))->getContext());
+		$this->assertNull((new Devour\Run($this->row(['tables' => '[]', 'ids' => '[]'])))->getContext());
+
+		$this->assertSame('limited', (new Devour\Run($this->row([
+			'tables' => '["people"]',
+			'ids'    => '[]',
+		])))->getContext());
+	}
+
+
 	public function testSilenceMeasuresFromHeartbeatWhenPresent()
 	{
 		$run = new Devour\Run($this->row(['heartbeat' => '2026-08-17 09:50:00']));
