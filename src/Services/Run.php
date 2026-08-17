@@ -250,7 +250,12 @@ class Run
 			return NULL;
 		}
 
-		return ($now ?: time()) - strtotime($last);
+		//
+		// Clamped at zero.  A heartbeat in the future means clock skew, or a PHP timezone that no
+		// longer matches whatever wrote the row — neither of which is evidence that the run has
+		// stalled, and a negative silence would otherwise be reported as a negative stall ratio.
+		//
+		return max(0, ($now ?: time()) - strtotime($last));
 	}
 
 
