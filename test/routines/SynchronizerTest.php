@@ -176,6 +176,104 @@ final class SynchronizerTest extends TestCase
 	}
 
 
+	private function dedupSynchronizer(): object
+	{
+		$database = $this->statsDatabase();
+
+		$sync = new class($database, $database) extends TestSynchronizer {
+			public function callUnsynced($name, $ids)
+			{
+				return $this->unsynced($name, $ids);
+			}
+
+			public function callRecordSynced($name, $ids): void
+			{
+				$this->recordSynced($name, $ids);
+			}
+
+			public function syncedFor($name)
+			{
+				return $this->synced[$name];
+			}
+		};
+
+		// event_sessions keys on (code, event), like most adjunct tables
+		$sync->addMapping(new Devour\Mapping('evses', 'event_sessions', ['code', 'event']));
+		$sync->addMapping(new Devour\Mapping('evfee', 'event_fees', 'id'));
+
+		return $sync;
+	}
+
+
+	/**
+	 * The second subset sync of a composite-key mapping used to read an undefined 'id' offset.
+	 */
+	public function testSubsetDedupHandlesCompositeKeys()
+	{
+		$sync = $this->dedupSynchronizer();
+
+		$sync->callRecordSynced('event_sessions', [
+			['code' => 'A', 'event' => '1'],
+			['code' => 'B', 'event' => '1'],
+		]);
+
+		$remaining = $sync->callUnsynced('event_sessions', [
+			['code' => 'A', 'event' => '1'],   // already synced
+			['code' => 'B', 'event' => '2'],   // same code, different event
+			['code' => 'C', 'event' => '1'],   // new
+		]);
+
+		$this->assertSame(
+			[['code' => 'B', 'event' => '2'], ['code' => 'C', 'event' => '1']],
+			array_values($remaining)
+		);
+	}
+
+
+	public function testSubsetDedupStillHandlesSingleKeys()
+	{
+		$sync = $this->dedupSynchronizer();
+
+		$sync->callRecordSynced('event_fees', [['id' => '10']]);
+
+		$remaining = $sync->callUnsynced('event_fees', [['id' => '10'], ['id' => '11']]);
+
+		$this->assertSame([['id' => '11']], array_values($remaining));
+	}
+
+
+	/**
+	 * Two events synced in one run each contribute a batch of adjunct keys.
+	 */
+	public function testSubsetResultsAccumulateAcrossBatches()
+	{
+		$sync = $this->dedupSynchronizer();
+
+		$sync->callRecordSynced('event_sessions', [['code' => 'A', 'event' => '1']]);
+		$sync->callRecordSynced('event_sessions', [['code' => 'A', 'event' => '2']]);
+
+		$this->assertCount(2, $sync->syncedFor('event_sessions'));
+
+		$remaining = $sync->callUnsynced('event_sessions', [
+			['code' => 'A', 'event' => '1'],
+			['code' => 'A', 'event' => '2'],
+		]);
+
+		$this->assertSame([], $remaining);
+	}
+
+
+	public function testFullSyncMarksAMappingEntirelySynced()
+	{
+		$sync = $this->dedupSynchronizer();
+
+		$sync->callRecordSynced('event_sessions', []);
+
+		$this->assertTrue($sync->syncedFor('event_sessions'));
+		$this->assertFalse($sync->callUnsynced('event_sessions', [['code' => 'A', 'event' => '1']]));
+	}
+
+
 	public function testScheduleStoresForceAndTables(): void
 	{
 		$database = new PDO('sqlite::memory:');

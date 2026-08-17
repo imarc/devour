@@ -102,6 +102,57 @@ final class MappingTest extends TestCase
 		);
 	}
 
+	/**
+	 * Adjunct ids are bound, not interpolated, and placeholder names match the params.
+	 */
+	public function testSourceAdjunctKeyQueryBindsIds()
+	{
+		$sessions = new Devour\Mapping('evses', 'event_sessions', ['code', 'event']);
+
+		$sessions->addField('code', 'evses.code');
+		$sessions->addField('event', 'evses.control');
+
+		$this->mapping->addAdjunct('event_sessions', ['source' => 'evses.control']);
+
+		$ids = [['id' => '1'], ['id' => "2'; DROP TABLE events --"]];
+		$sql = $this->mapping->composeSourceAdjunctKeyQuery($sessions, $ids);
+
+		$this->assertStringContainsString(':adjunct_0', $sql);
+		$this->assertStringContainsString(':adjunct_1', $sql);
+		$this->assertStringNotContainsString('DROP TABLE', $sql);
+
+		$this->assertSame(
+			['adjunct_0' => '1', 'adjunct_1' => "2'; DROP TABLE events --"],
+			$this->mapping->composeSourceAdjunctKeyParams($ids)
+		);
+	}
+
+
+	/**
+	 * unsynced() filters with array_filter(), which preserves keys, so offsets can have gaps.
+	 */
+	public function testSourceAdjunctKeyParamsFollowNonSequentialOffsets()
+	{
+		$sessions = new Devour\Mapping('evses', 'event_sessions', ['code', 'event']);
+
+		$sessions->addField('code', 'evses.code');
+		$sessions->addField('event', 'evses.control');
+
+		$this->mapping->addAdjunct('event_sessions', ['source' => 'evses.control']);
+
+		$ids = [2 => ['id' => 'a'], 5 => ['id' => 'b']];
+		$sql = $this->mapping->composeSourceAdjunctKeyQuery($sessions, $ids);
+
+		$this->assertStringContainsString(':adjunct_2', $sql);
+		$this->assertStringContainsString(':adjunct_5', $sql);
+
+		$this->assertSame(
+			['adjunct_2' => 'a', 'adjunct_5' => 'b'],
+			$this->mapping->composeSourceAdjunctKeyParams($ids)
+		);
+	}
+
+
 	public function testSourceSelectQuery()
 	{
 		$this->assertEquals(

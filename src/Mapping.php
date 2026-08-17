@@ -298,18 +298,43 @@ class Mapping
 	{
 		$table = $adjunct->getDestination();
 		$keys  = $this->adjuncts[$table];
+		$terms = [];
+
+		//
+		// Placeholders rather than interpolated values.  Bind them with
+		// composeSourceAdjunctKeyParams(), which derives its names from the same array offsets.
+		//
+		foreach (array_keys($ids) as $offset) {
+			$terms[] = sprintf('RTRIM(LTRIM(%s)) = :adjunct_%s', $keys['source'], $offset);
+		}
 
 		$sql = $this->compose(
 			'SELECT %s FROM %s WHERE %s AND (%s)',
 			$adjunct->makeSourceKey(),
 			$adjunct->makeSourceFrom(),
 			$adjunct->makeSourceWheres(),
-			join(' OR ', array_map(function($id) use ($keys) {
-				return sprintf("RTRIM(LTRIM(%s)) = '%s'", $keys['source'], $id[$this->key[0]]);
-			}, $ids))
+			join(' OR ', $terms)
 		);
 
 		return $sql;
+	}
+
+
+	/**
+	 * Values to bind into composeSourceAdjunctKeyQuery()'s placeholders.
+	 *
+	 * Offsets come from $ids as given.  unsynced() filters with array_filter(), which preserves
+	 * keys, so the list handed here is not necessarily sequentially numbered.
+	 */
+	public function composeSourceAdjunctKeyParams($ids): array
+	{
+		$params = [];
+
+		foreach ($ids as $offset => $id) {
+			$params['adjunct_' . $offset] = $id[$this->key[0]];
+		}
+
+		return $params;
 	}
 
 

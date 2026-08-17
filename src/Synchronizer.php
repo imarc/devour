@@ -913,16 +913,21 @@ class Synchronizer
 	 */
 	protected function unsynced($name, $ids = null)
 	{
-		if ($ids) {
-			if (is_array($this->synced[$name])) {
-				$synced = array_column($this->synced[$name], 'id');
-				$synced = array_fill_keys($synced, true);
+		$synced = $this->synced[$name] ?? FALSE;
 
-				return array_filter($ids, function ($item) use ($synced) {
-					return !isset($synced[$item['id']]);
+		if ($ids) {
+			if (is_array($synced)) {
+				$seen = [];
+
+				foreach ($synced as $row) {
+					$seen[$this->keySignature($name, $row)] = TRUE;
+				}
+
+				return array_filter($ids, function ($item) use ($name, $seen) {
+					return !isset($seen[$this->keySignature($name, $item)]);
 				});
 
-			} elseif ($this->synced[$name]) {
+			} elseif ($synced) {
 				return FALSE;
 
 			} else {
@@ -930,11 +935,53 @@ class Synchronizer
 			}
 		}
 
-		if ($this->synced[$name]) {
+		if ($synced) {
 			return FALSE;
 		}
 
 		return TRUE;
+	}
+
+
+	/**
+	 * A comparable signature for one key row of a mapping.
+	 *
+	 * Composite keys are the norm for adjunct tables — event_sessions keys on (code, event) — so
+	 * this cannot assume a single column named 'id'.  It used to, which meant the second subset
+	 * sync of any composite-key mapping within a run read an undefined 'id' offset and, on a host
+	 * that promotes warnings to exceptions, aborted that mapping.
+	 */
+	protected function keySignature(string $name, array $row): string
+	{
+		$values = [];
+
+		foreach ($this->mappings[$name]->getKey() as $field) {
+			$values[] = (string) ($row[$field] ?? '');
+		}
+
+		return join("\0", $values);
+	}
+
+
+	/**
+	 * Record what has been synced for a mapping.
+	 *
+	 * Subset results accumulate rather than replace: syncing two events in one run produces two
+	 * batches of adjunct keys, and overwriting would let the first batch be synced again.
+	 */
+	protected function recordSynced($name, $ids): void
+	{
+		if (!$ids) {
+			$this->synced[$name] = TRUE;
+
+			return;
+		}
+
+		$existing = is_array($this->synced[$name] ?? NULL)
+			? $this->synced[$name]
+			: [];
+
+		$this->synced[$name] = array_merge($existing, $ids);
 	}
 
 
@@ -1162,22 +1209,34 @@ class Synchronizer
 
 		$this->updateSet($name, $start_sync_time);
 
-		if ($ids) {
-			$this->synced[array_pop($this->stack)] = $ids;
-		} else {
-			$this->synced[array_pop($this->stack)] = TRUE;
-		}
+		$this->recordSynced(array_pop($this->stack), $ids);
 
 		//
 		// This is exclusively for subsets, but we don't want to chain sub-items
 		//
 		if ($ids && !$context) {
 			foreach ($mapping->getAdjuncts() as $adjunct => $config) {
+				//
+				// A site can disable or blacklist any mapping, so an adjunct naming one that was
+				// not registered is a configuration outcome rather than a fault.  Skipped loudly:
+				// unguarded, this was an undefined index.
+				//
+				if (!isset($this->mappings[$adjunct])) {
+					$this->log(sprintf(
+						'...skipping adjunct %s, no such mapping defined',
+						$adjunct
+					));
+
+					continue;
+				}
+
 				$adjunct   = $this->mappings[$adjunct];
 				$key_query = $mapping->composeSourceAdjunctKeyQuery($adjunct, $ids);
-				$keys      = $this->source->query($key_query)->fetchAll();
+				$statement = $this->source->prepare($key_query);
 
-				$keys = $this->filterKeys($adjunct, $keys, 'select');
+				$statement->execute($mapping->composeSourceAdjunctKeyParams($ids));
+
+				$keys = $this->filterKeys($adjunct, $statement->fetchAll(PDO::FETCH_ASSOC), 'select');
 
 				if ($keys) {
 					$this->syncMapping($adjunct->getDestination(), $keys, $force_update, Mapping::CONTEXT_ADJUNCT);
