@@ -59,7 +59,7 @@ final class SynchronizerTest extends TestCase
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
 		$database->exec("INSERT INTO devour_stats VALUES (1, NULL, NULL, '2026-08-14 00:00:00', NULL, NULL, NULL, 0, NULL)");
 
-		$sync = new class($database, $database) extends Devour\Synchronizer {
+		$sync = new class($database, $database) extends TestSynchronizer {
 			public function setStat(array $stat): void
 			{
 				$this->stat = $stat;
