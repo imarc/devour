@@ -556,7 +556,16 @@ class Synchronizer
 				declare(ticks=1);
 
 				$killer = function () {
-					$this->statSet('end_time', date('Y-m-d H:i:s'));
+					try {
+						$this->statSet('end_time', date('Y-m-d H:i:s'));
+
+					} catch (CanceledException $e) {
+						//
+						// Already cancelled — canceled_time is the terminator, and throwing out of
+						// a signal handler would be a fatal rather than a clean exit.
+						//
+					}
+
 					exit();
 				};
 
@@ -568,16 +577,32 @@ class Synchronizer
 				$mappings = array_keys($this->mappings);
 			}
 
-			foreach ($mappings as $mapping) {
-				try {
-					$this->syncMapping($mapping, $ids[$mapping] ?? [], $force_update);
+			try {
+				foreach ($mappings as $mapping) {
+					try {
+						$this->syncMapping($mapping, $ids[$mapping] ?? [], $force_update);
 
-				} catch (\Exception $e) {
-					$this->log($e->getMessage());
+					} catch (CanceledException $e) {
+						//
+						// Caught ahead of the generic handler below, which logs — and logging is
+						// exactly what throws once the run has been cancelled.
+						//
+						throw $e;
+
+					} catch (\Exception $e) {
+						$this->log($e->getMessage());
+					}
 				}
-			}
 
-			$this->statSet('end_time', date('Y-m-d H:i:s'));
+				$this->statSet('end_time', date('Y-m-d H:i:s'));
+
+			} catch (CanceledException $e) {
+				//
+				// canceled_time is the terminator for a cancelled run.  Stamping end_time as well
+				// would return it to the duration history it was deliberately excluded from.
+				//
+				return $this->stat;
+			}
 		}
 
 

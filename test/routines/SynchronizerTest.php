@@ -111,6 +111,56 @@ final class SynchronizerTest extends TestCase
 	}
 
 
+	public function testRunStopsWhenCancelledMidway()
+	{
+		$database = $this->statsDatabase();
+
+		$sync = new class($database, $database) extends TestSynchronizer {
+			public array $syncedNames = [];
+
+			protected function syncMapping($name, $ids, $force_update, $context = NULL)
+			{
+				//
+				// Logged before recording, so syncedNames holds only the mappings that got past
+				// their first log line — which is where a cancelled run is meant to stop.
+				//
+				$this->log('syncing ' . $name);
+
+				$this->syncedNames[] = $name;
+
+				if ($name === 'events') {
+					$this->destination->exec(
+						"UPDATE devour_stats SET canceled_time = '2026-08-17 09:00:00'"
+					);
+				}
+			}
+		};
+
+		$sync->addMapping(new Devour\Mapping('source_events', 'events', 'id'));
+		$sync->addMapping(new Devour\Mapping('source_people', 'people', 'id'));
+		$sync->run();
+
+		$row = $database->query('SELECT * FROM devour_stats LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+
+		// events ran and cancelled itself; people must never have been attempted
+		$this->assertSame(['events'], $sync->syncedNames);
+		$this->assertNull($row['end_time']);
+		$this->assertNotNull($row['canceled_time']);
+	}
+
+
+	public function testIsRunningIgnoresCancelledRows()
+	{
+		$database = $this->statsDatabase();
+		$database->exec("INSERT INTO devour_stats (id, start_time, canceled_time)
+		                 VALUES (1, '2026-08-17 09:00:00', '2026-08-17 09:30:00')");
+
+		$sync = new TestSynchronizer($database, $database);
+
+		$this->assertFalse($sync->isRunning());
+	}
+
+
 	public function testScheduleStoresForceAndTables(): void
 	{
 		$database = new PDO('sqlite::memory:');
