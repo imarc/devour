@@ -1,0 +1,25 @@
+test/routines/SynchronizerTest.php
+  s_2be78ae8c252ee::t_90b929d48cf1c4 123-126,128-129
+  s_2be78ae8c252ee::t_ca8193a0ede182 114-118,120-122,127,130-145,147-163
+  s_2be78ae8c252ee::t_5a6eb0059b510b 119
+  s_2be78ae8c252ee::t_96877e03ba3964 146
+src/Synchronizer.php
+  s_2be78ae8c252ee::t_3913bae640555d 580-594,597-605
+  s_2be78ae8c252ee::t_4f14de9abd4947 559-568
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "4081f91b28cad98f0b6336af62e797e3790a96e2",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
