@@ -186,7 +186,7 @@ class Synchronizer
 	/**
 	 * 
 	 */
-	protected function getOpenRun(): ?Run
+	public function getOpenRun(): ?Run
 	{
 		$row = $this->destination
 			->query(sprintf(

@@ -196,6 +196,39 @@ class Run
 
 
 	/**
+	 * The tables this run was limited to, or an empty list meaning every mapping.
+	 */
+	public function getTableList(): array
+	{
+		if ($this->isEmptyList($this->getTables())) {
+			return [];
+		}
+
+		$decoded = json_decode($this->getTables(), TRUE);
+
+		return is_array($decoded) ? $decoded : [];
+	}
+
+
+	/**
+	 * Was this run asked to update every row rather than only those changed since the watermark?
+	 *
+	 * The column is boolean in PostgreSQL but reaches PHP as a driver-dependent scalar, so the
+	 * spellings a boolean can arrive as are all accepted.
+	 */
+	public function isForced(): bool
+	{
+		$force = $this->row['force'] ?? NULL;
+
+		if (is_bool($force)) {
+			return $force;
+		}
+
+		return in_array(strtolower((string) $force), ['1', 't', 'true', 'on'], TRUE);
+	}
+
+
+	/**
 	 * Which historical bucket this run should be compared against.
 	 *
 	 * Mirrors Synchronizer::getSyncInterval()'s buckets exactly.  A full sync's log gaps are

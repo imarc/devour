@@ -84,6 +84,32 @@ final class RunTest extends TestCase
 	}
 
 
+	public function testTableListDecodesToTheNamedTables()
+	{
+		$this->assertSame([], (new Devour\Run($this->row()))->getTableList());
+		$this->assertSame([], (new Devour\Run($this->row(['tables' => '[]'])))->getTableList());
+
+		$this->assertSame(
+			['events', 'event_fees'],
+			(new Devour\Run($this->row(['tables' => '["events","event_fees"]'])))->getTableList()
+		);
+	}
+
+
+	public function testForcedReadsEverySpellingOfTheBooleanColumn()
+	{
+		$this->assertFalse((new Devour\Run($this->row()))->isForced());
+		$this->assertFalse((new Devour\Run($this->row(['force' => '0'])))->isForced());
+		$this->assertFalse((new Devour\Run($this->row(['force' => 'f'])))->isForced());
+		$this->assertFalse((new Devour\Run($this->row(['force' => FALSE])))->isForced());
+
+		$this->assertTrue((new Devour\Run($this->row(['force' => '1'])))->isForced());
+		$this->assertTrue((new Devour\Run($this->row(['force' => 't'])))->isForced());
+		$this->assertTrue((new Devour\Run($this->row(['force' => 'true'])))->isForced());
+		$this->assertTrue((new Devour\Run($this->row(['force' => TRUE])))->isForced());
+	}
+
+
 	public function testSilenceMeasuresFromHeartbeatWhenPresent()
 	{
 		$run = new Devour\Run($this->row(['heartbeat' => '2026-08-17 09:50:00']));
