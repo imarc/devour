@@ -112,6 +112,60 @@ final class SupervisorTest extends TestCase
 	}
 
 
+	public function testCancelRecordsWithoutStampingEndTime()
+	{
+		$database = $this->database([
+			['id' => 1, 'start_time' => '2026-08-17 09:00:00', 'log' => 'partial work'],
+		]);
+
+		$run = (new TestSupervisor($database))->cancel(1, 'cli:ops@box');
+
+		$this->assertNotNull($run);
+		$this->assertSame('partial work', $run->getLog());
+		$this->assertSame('cli:ops@box', $run->getCanceledBy());
+		$this->assertNotNull($run->getCanceledTime());
+		$this->assertNull($run->getEndTime());
+
+		$row = $database->query('SELECT * FROM devour_stats WHERE id = 1')->fetch(PDO::FETCH_ASSOC);
+
+		$this->assertNotNull($row['canceled_time']);
+		$this->assertNull($row['end_time']);
+		$this->assertSame('partial work', $row['log']);
+	}
+
+
+	public function testCancelRefusesRunsThatAreNotRunning()
+	{
+		$database = $this->database([
+			['id' => 1, 'start_time' => '2026-08-01 00:00:00', 'end_time' => '2026-08-01 01:00:00'],
+			['id' => 2, 'start_time' => '2026-08-02 00:00:00', 'canceled_time' => '2026-08-02 00:30:00'],
+			['id' => 3, 'scheduled_time' => '2026-08-03 00:00:00'],
+		]);
+
+		$supervisor = new TestSupervisor($database);
+
+		$this->assertNull($supervisor->cancel(1));
+		$this->assertNull($supervisor->cancel(2));
+		$this->assertNull($supervisor->cancel(3));
+		$this->assertNull($supervisor->cancel(99));
+	}
+
+
+	public function testCancelledRunsAreExcludedFromTheDurationBaseline()
+	{
+		$database = $this->database([
+			['id' => 1, 'start_time' => '2026-08-17 09:00:00', 'max_gap' => 60],
+		]);
+
+		(new TestSupervisor($database))->cancel(1);
+
+		// end_time is still NULL, so MAX(end_time - start_time) skips this row entirely.
+		$this->assertNull(
+			$database->query('SELECT MAX(end_time) FROM devour_stats')->fetchColumn() ?: NULL
+		);
+	}
+
+
 	/**
 	 * Pins Run::WHERE_RUNNING against Run::isRunning() over one shared fixture set.
 	 *

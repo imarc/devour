@@ -105,6 +105,46 @@ class Supervisor
 
 
 	/**
+	 * Record a cancellation against a running sync.
+	 *
+	 * end_time is deliberately left NULL.  getSyncInterval() derives the site's expected run length
+	 * from MAX(end_time - start_time), so stamping an end time here would let a run that sat dead
+	 * for three days redefine "normal" and suppress every future detection.
+	 */
+	public function cancel(int $id, ?string $by = NULL): ?Run
+	{
+		$run = $this->find($id);
+
+		if (!$run || !$run->isRunning()) {
+			return NULL;
+		}
+
+		$canceled = date('Y-m-d H:i:s');
+
+		$statement = $this->database->prepare(sprintf(
+			'UPDATE devour_stats SET canceled_time = :canceled_time, canceled_by = :canceled_by
+			 WHERE id = :id AND %s',
+			Run::WHERE_RUNNING
+		));
+
+		$statement->execute([
+			'canceled_time' => $canceled,
+			'canceled_by'   => $by,
+			'id'            => $id,
+		]);
+
+		if ($statement->rowCount() < 1) {
+			return NULL;
+		}
+
+		return (new Run(array_merge($run->toArray(), [
+			'canceled_time' => $canceled,
+			'canceled_by'   => $by,
+		])))->withBaseline($run->getBaseline());
+	}
+
+
+	/**
 	 * The largest gap between log lines ever recorded by a completed run of this shape.
 	 *
 	 * Completed runs only.  A run that died stopped writing lines, so the gap that killed it was
