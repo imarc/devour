@@ -72,7 +72,7 @@ final class MigrationRunnerIntegrationTest extends TestCase
 		Devour\Migrations\MigrationRunner::migrate($this->database);
 
 		Devour\Migrations\MigrationRunner::assertReady($this->database);
-		$this->assertSame(1, (int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn());
+		$this->assertSame(2, (int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn());
 		$this->assertInstanceOf(Devour\Synchronizer::class, new Devour\Synchronizer($this->database, $this->database));
 		$this->assertInstanceOf(Devour\Analyzer::class, new Devour\Analyzer($this->database));
 	}
@@ -280,6 +280,118 @@ final class MigrationRunnerIntegrationTest extends TestCase
 		$this->expectExceptionMessage('Devour migration 1 is pending');
 
 		Devour\Migrations\MigrationRunner::assertReady($this->database);
+	}
+
+
+	public function testCancellationColumnsAreAddedToAFreshSchema(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$columns = $this->statsColumns();
+
+		$this->assertSame('timestamp without time zone', $columns['canceled_time']);
+		$this->assertSame('text', $columns['canceled_by']);
+		$this->assertSame('timestamp without time zone', $columns['heartbeat']);
+		$this->assertSame('integer', $columns['max_gap']);
+	}
+
+
+	public function testCancellationColumnsAreAddedToABaselinedLegacySchema(): void
+	{
+		$this->createLegacyStats('devour_stats_id_seq', 'START 1 INCREMENT 1');
+		$this->createLegacyUpdates();
+
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$this->assertArrayHasKey('canceled_time', $this->statsColumns());
+	}
+
+
+	public function testBothMigrationsAreRecorded(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$ids = $this->database
+			->query('SELECT id FROM devour_migrations ORDER BY id')
+			->fetchAll(PDO::FETCH_COLUMN)
+		;
+
+		$this->assertSame(['1', '2'], array_map('strval', $ids));
+	}
+
+
+	public function testMigratingTwiceIsANoop(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		Devour\Migrations\MigrationRunner::assertReady($this->database);
+
+		$this->assertSame(
+			2,
+			(int) $this->database->query('SELECT COUNT(*) FROM devour_migrations')->fetchColumn()
+		);
+	}
+
+
+	/**
+	 * getSyncInterval() is PostgreSQL-specific, so it cannot be covered by the SQLite unit suite.
+	 *
+	 * The empty-history case is the one that regressed: an aggregate over zero rows still returns
+	 * one row holding NULL, so the old rowCount() guard never fired and strtotime(NULL) produced
+	 * seconds-since-midnight.  SQLite reports rowCount() 0 for a SELECT and so hid the bug entirely.
+	 */
+	public function testSyncIntervalIsNullWithoutHistory(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		$this->assertNull($sync->getSyncInterval());
+	}
+
+
+	public function testSyncIntervalReportsSecondsFromCompletedRuns(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$this->database->exec(
+			"INSERT INTO devour_stats (start_time, end_time)
+			 VALUES ('2026-08-17 09:00:00', '2026-08-17 09:10:00'),
+			        ('2026-08-17 10:00:00', '2026-08-17 10:45:00')"
+		);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		$this->assertSame(2700, $sync->getSyncInterval());
+		$this->assertSame(1650, $sync->getSyncInterval(NULL, 'average'));
+	}
+
+
+	public function testSyncIntervalRejectsAnUnknownMode(): void
+	{
+		Devour\Migrations\MigrationRunner::migrate($this->database);
+
+		$sync = new Devour\Synchronizer($this->database, $this->database);
+
+		$this->expectException(InvalidArgumentException::class);
+
+		$sync->getSyncInterval(NULL, 'median');
+	}
+
+
+	/**
+	 * @return array<string, string>
+	 */
+	private function statsColumns(): array
+	{
+		$statement = $this->database->prepare(
+			'SELECT column_name, data_type FROM information_schema.columns
+			 WHERE table_schema = :schema AND table_name = :table'
+		);
+		$statement->execute(['schema' => $this->schema, 'table' => 'devour_stats']);
+
+		return array_column($statement->fetchAll(PDO::FETCH_ASSOC), 'data_type', 'column_name');
 	}
 
 
