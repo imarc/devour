@@ -1,0 +1,29 @@
+src/Migrations/Versions/Migration003.php
+  s_2be78ae8c252ee::t_8678711f0024a7 19,32
+src/Services/Run.php
+  s_2be78ae8c252ee::t_ad99517b9cc681 169,171,178,180
+src/Synchronizer.php
+  s_2be78ae8c252ee::t_7d7c34fcfa71a3 684,1421,1424,1428-1429
+test/integration/MigrationRunnerIntegrationTest.php
+  s_2be78ae8c252ee::t_f5410de9408694 310,316
+test/routines/MigrationRunnerTest.php
+  s_2be78ae8c252ee::t_b3ac9f5d704810 101
+test/routines/SynchronizerTest.php
+  s_2be78ae8c252ee::t_14309039cde98e 22,212,233,257,275,290,308,390,402
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e19f71c059ebf757c9ba72129a0b06863201fb0f",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
