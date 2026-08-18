@@ -681,7 +681,7 @@ class Synchronizer
 				'canceled_by'    => NULL,
 				'heartbeat'      => NULL,
 				'max_gap'        => NULL,
-				'error'          => NULL,
+				'errors'         => NULL,
 				'table_stats'    => NULL,
 				'tables'         => NULL,
 				'ids'            => NULL,
@@ -1418,15 +1418,15 @@ class Synchronizer
 			return;
 		}
 
-		$this->stat['error'] = $this->composeErrors();
+		$this->stat['errors'] = $this->composeErrors();
 
 		$statement = $this->destination->prepare(
-			'UPDATE devour_stats SET error = :error WHERE id = :id'
+			'UPDATE devour_stats SET errors = :errors WHERE id = :id'
 		);
 
 		$statement->execute([
-			'error' => $this->stat['error'],
-			'id'    => $this->stat['id'],
+			'errors' => $this->stat['errors'],
+			'id'     => $this->stat['id'],
 		]);
 	}
 

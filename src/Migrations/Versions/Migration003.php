@@ -16,7 +16,7 @@ use Devour\Migrations\MigrationException;
 class Migration003 implements Migration
 {
 	private const COLUMNS = [
-		'error'       => 'TEXT',
+		'errors'      => 'TEXT',
 		'table_stats' => 'TEXT',
 	];
 
@@ -29,7 +29,7 @@ class Migration003 implements Migration
 
 	public function getDescription(): string
 	{
-		return 'Add error and per-table statistic columns to devour_stats';
+		return 'Add errors and per-table statistic columns to devour_stats';
 	}
 
 

@@ -19,7 +19,7 @@ final class SynchronizerTest extends TestCase
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			start_time TEXT, scheduled_by TEXT, scheduled_time TEXT, end_time TEXT,
 			canceled_time TEXT, canceled_by TEXT, heartbeat TEXT, max_gap INTEGER,
-			error TEXT, table_stats TEXT,
+			errors TEXT, table_stats TEXT,
 			tables TEXT, ids TEXT, force INTEGER, log TEXT
 		)');
 		$database->exec('CREATE TABLE devour_updates (target VARCHAR(255) PRIMARY KEY, time TIMESTAMP)');
@@ -209,7 +209,7 @@ final class SynchronizerTest extends TestCase
 
 		$sync->emitError('events', 'update failed', 'value too long', '{"id":"e1"}');
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 		$lines = array_values(array_filter(explode("\n", $error)));
 
 		$this->assertCount(2, $lines);
@@ -230,7 +230,7 @@ final class SynchronizerTest extends TestCase
 		$sync->emitError('people', 'insert failed', "invalid input syntax for integer: 'abc'");
 		$sync->emitError('people', 'insert failed', "invalid input syntax for integer: 'xyz'");
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 
 		$this->assertCount(1, array_filter(explode("\n", $error)));
 		$this->assertStringContainsString('2 x insert failed', $error);
@@ -254,7 +254,7 @@ final class SynchronizerTest extends TestCase
 			$sync->emitErrorFor('events', 'insert failed', 'null value in column "category"', $id);
 		}
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 
 		$this->assertStringContainsString('3 x insert failed', $error);
 		$this->assertStringContainsString('affected records: 603523is, 603552erb, 603553erb', $error);
@@ -272,7 +272,7 @@ final class SynchronizerTest extends TestCase
 		$sync->schedule([], [], 'admin@example.com');
 		$sync->emitError('committees', 'insert failed', 'null value in column "id"', '{"id":null,"name":"Audit"}');
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 
 		$this->assertStringContainsString('(e.g. {"id":null,"name":"Audit"})', $error);
 	}
@@ -287,7 +287,7 @@ final class SynchronizerTest extends TestCase
 		$sync->emitErrorFor('events', 'insert failed', 'duplicate key', '603523is');
 		$sync->emitErrorFor('events', 'insert failed', 'duplicate key', '603523is');
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 
 		$this->assertSame(1, substr_count($error, '603523is'));
 		$this->assertStringContainsString('affected record: 603523is', $error);
@@ -305,7 +305,7 @@ final class SynchronizerTest extends TestCase
 			$sync->emitErrorFor('events', 'insert failed', 'duplicate key', 'id' . $i);
 		}
 
-		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
 
 		$this->assertStringContainsString('(+5 more)', $error);
 	}
@@ -387,7 +387,7 @@ final class SynchronizerTest extends TestCase
 
 		$this->assertStringContainsString(
 			'first-run-record',
-			(string) $database->query('SELECT error FROM devour_stats WHERE id = ' . $first)->fetchColumn()
+			(string) $database->query('SELECT errors FROM devour_stats WHERE id = ' . $first)->fetchColumn()
 		);
 
 		// a second run against the same instance opens a new row, which then fails on its own
@@ -399,7 +399,7 @@ final class SynchronizerTest extends TestCase
 
 		$sync->emitError('people', 'value too long');
 
-		$error = (string) $database->query('SELECT error FROM devour_stats WHERE id = ' . $second)->fetchColumn();
+		$error = (string) $database->query('SELECT errors FROM devour_stats WHERE id = ' . $second)->fetchColumn();
 
 		$this->assertStringContainsString('value too long', $error);
 		$this->assertStringNotContainsString('duplicate key', $error);

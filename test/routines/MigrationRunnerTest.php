@@ -98,7 +98,7 @@ final class MigrationRunnerTest extends TestCase
 
 		$this->assertSame(3, $migration->getId());
 		$this->assertSame(
-			'Add error and per-table statistic columns to devour_stats',
+			'Add errors and per-table statistic columns to devour_stats',
 			$migration->getDescription()
 		);
 	}

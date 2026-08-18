@@ -307,13 +307,13 @@ final class MigrationRunnerIntegrationTest extends TestCase
 	}
 
 
-	public function testErrorAndTableStatColumnsAreAdded(): void
+	public function testErrorsAndTableStatColumnsAreAdded(): void
 	{
 		Devour\Migrations\MigrationRunner::migrate($this->database);
 
 		$columns = $this->statsColumns();
 
-		$this->assertSame('text', $columns['error']);
+		$this->assertSame('text', $columns['errors']);
 		$this->assertSame('text', $columns['table_stats']);
 	}
 

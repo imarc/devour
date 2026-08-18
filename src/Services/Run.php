@@ -166,18 +166,18 @@ class Run
 	 * of thousands of lines and its failures are a handful of distinct problems repeated; this is
 	 * the handful.
 	 */
-	public function getError(): ?string
+	public function getErrors(): ?string
 	{
-		return $this->row['error'] ?? NULL;
+		return $this->row['errors'] ?? NULL;
 	}
 
 
 	/**
 	 *
 	 */
-	public function hasError(): bool
+	public function hasErrors(): bool
 	{
-		return trim((string) $this->getError()) !== '';
+		return trim((string) $this->getErrors()) !== '';
 	}
 
 
