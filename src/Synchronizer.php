@@ -1154,8 +1154,13 @@ class Synchronizer
 	 */
 	protected function logError(string $table, string $operation, string $message, $context = NULL, ?string $identifier = NULL): void
 	{
-		$message   = trim(preg_replace('/\s+/', ' ', $message));
-		$signature = $table . "\0" . $operation . "\0" . $this->normalizeError($message);
+		//
+		// Normalized once and used for both grouping and display: showing one row's raw message
+		// beside a count of many would attribute the whole group to whichever row happened to fail
+		// first.  The values themselves are listed as affected records.
+		//
+		$message   = $this->normalizeError(trim(preg_replace('/\s+/', ' ', $message)));
+		$signature = $table . "\0" . $operation . "\0" . $message;
 
 		if (!isset($this->errors[$signature])) {
 			$this->errors[$signature] = [
@@ -1235,12 +1240,27 @@ class Synchronizer
 	/**
 	 * Collapse the parts of a message that vary between otherwise identical failures.
 	 *
-	 * Quoted literals and bare numbers carry the offending value, so leaving them in would file
-	 * every row of a failing batch as its own distinct error.
+	 * PostgreSQL names the offending value in its DETAIL clause — "Key (id)=(pb) already exists" —
+	 * so without this every row of a failing batch is its own distinct error.  The value is dropped
+	 * rather than the whole clause, because DETAIL also says which column and which referenced
+	 * table are involved, and that is the same for every row and worth keeping.
+	 *
+	 * Numbers are only collapsed where they are a value.  A bare digit rule would also rewrite
+	 * "character varying(5)", merging length violations on columns of different widths into one.
 	 */
 	protected function normalizeError(string $message): string
 	{
-		return preg_replace(['/\'[^\']*\'/', '/\b\d+\b/'], ["'?'", '#'], $message);
+		return preg_replace(
+			[
+				'/=\([^)]*\)/',
+				"/'[^']*'/",
+			],
+			[
+				'=(?)',
+				"'?'",
+			],
+			$message
+		);
 	}
 
 

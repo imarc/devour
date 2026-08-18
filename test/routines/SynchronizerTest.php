@@ -221,6 +221,55 @@ final class SynchronizerTest extends TestCase
 	/**
 	 * Otherwise-identical failures differing only by the offending value are one error.
 	 */
+	/**
+	 * PostgreSQL names the offending value in DETAIL, which made every row its own error.
+	 */
+	public function testErrorsAggregateAcrossPostgresDetailValues()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+
+		foreach (['pb', 'pc', 'at', 'px', 'nc'] as $id) {
+			$sync->emitErrorFor(
+				'ledgers',
+				'transfer failed',
+				'SQLSTATE[23505]: Unique violation: 7 ERROR: duplicate key value violates unique '
+					. 'constraint "devour_temp_ledgers_pkey" DETAIL: Key (id)=(' . $id . ') already exists.',
+				$id
+			);
+		}
+
+		$errors = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertCount(1, array_filter(explode("\n", $errors)));
+		$this->assertStringContainsString('5 x transfer failed', $errors);
+		$this->assertStringContainsString('Key (id)=(?) already exists', $errors);
+		$this->assertStringContainsString('affected records: pb, pc, at, px, nc', $errors);
+	}
+
+
+	/**
+	 * A width is part of the type, not a value, so violations on different columns stay distinct.
+	 */
+	public function testErrorsKeepStructuralNumbersDistinct()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emitErrorFor('people', 'insert failed', 'value too long for type character varying(5)', 'a');
+		$sync->emitErrorFor('people', 'insert failed', 'value too long for type character varying(50)', 'b');
+
+		$errors = (string) $database->query('SELECT errors FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertCount(2, array_filter(explode("\n", $errors)));
+		$this->assertStringContainsString('varying(5)', $errors);
+		$this->assertStringContainsString('varying(50)', $errors);
+	}
+
+
 	public function testErrorsAggregateAcrossVaryingValues()
 	{
 		$database = $this->statsDatabase();
