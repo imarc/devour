@@ -554,6 +554,14 @@ class Synchronizer
 	 */
 	public function run(array $mappings = array(), $ids = array(), $force_update = FALSE): array
 	{
+		//
+		// Both accumulate across a run and are written against whichever devour_stats row is
+		// current.  stat() is about to move to a new row, so anything carried over from a previous
+		// run would be reported against this one.
+		//
+		$this->errors     = [];
+		$this->tableStats = [];
+
 		$this->stat();
 
 		if ($this->isRunning()) {

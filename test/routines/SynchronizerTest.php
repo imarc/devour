@@ -364,6 +364,48 @@ final class SynchronizerTest extends TestCase
 	}
 
 
+	/**
+	 * A second run must not report the first run's failures against its own row.
+	 */
+	public function testRunClearsAccumulatorsFromAnEarlierRun()
+	{
+		$database = $this->statsDatabase();
+
+		$sync = new class($database, $database) extends TestSynchronizer {
+			public function emitError(string $table, string $message): void
+			{
+				$this->logError($table, 'insert failed', $message, NULL, 'first-run-record');
+			}
+		};
+
+		$sync->setEchoVerbosity(-1);
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emitError('events', 'duplicate key');
+		$sync->run();
+
+		$first = (int) $database->query('SELECT id FROM devour_stats ORDER BY id DESC LIMIT 1')->fetchColumn();
+
+		$this->assertStringContainsString(
+			'first-run-record',
+			(string) $database->query('SELECT error FROM devour_stats WHERE id = ' . $first)->fetchColumn()
+		);
+
+		// a second run against the same instance opens a new row, which then fails on its own
+		$sync->run();
+
+		$second = (int) $database->query('SELECT id FROM devour_stats ORDER BY id DESC LIMIT 1')->fetchColumn();
+
+		$this->assertNotSame($first, $second);
+
+		$sync->emitError('people', 'value too long');
+
+		$error = (string) $database->query('SELECT error FROM devour_stats WHERE id = ' . $second)->fetchColumn();
+
+		$this->assertStringContainsString('value too long', $error);
+		$this->assertStringNotContainsString('duplicate key', $error);
+	}
+
+
 	public function testRunStopsWhenCancelledMidway()
 	{
 		$database = $this->statsDatabase();
