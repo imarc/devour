@@ -1,0 +1,21 @@
+src/Synchronizer.php
+  s_2be78ae8c252ee::t_ebe5f0ea61833f 557-564
+test/routines/SynchronizerTest.php
+  s_2be78ae8c252ee::t_f12f639b6a885c 367-408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "766376ab8237d66191a589ffad225ad6c368c4bd",
+  "prompts": {},
+  "sessions": {
+    "s_2be78ae8c252ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fbea208a-fa68-40a9-84c4-d25be16ecb1a",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
