@@ -126,6 +126,16 @@ final class SynchronizerTest extends TestCase
 				$this->logError($table, $op, $message, $context);
 			}
 
+			public function emitErrorFor(string $table, string $op, string $message, string $id): void
+			{
+				$this->logError($table, $op, $message, NULL, $id);
+			}
+
+			public function identifierFor(Devour\Mapping $mapping, array $row): ?string
+			{
+				return $this->composeRowIdentifier($mapping, $row);
+			}
+
 			public function openStats(string $table): void
 			{
 				$this->openTableStats($table);
@@ -224,6 +234,102 @@ final class SynchronizerTest extends TestCase
 
 		$this->assertCount(1, array_filter(explode("\n", $error)));
 		$this->assertStringContainsString('2 x insert failed', $error);
+	}
+
+
+	/**
+	 * The keys of every affected record survive aggregation.
+	 *
+	 * These are what someone works from to correct records at the source, so keeping one example
+	 * and discarding the rest loses the actionable part of the error.
+	 */
+	public function testAggregatedErrorsListEveryAffectedRecord()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+
+		foreach (['603523is', '603552erb', '603553erb'] as $id) {
+			$sync->emitErrorFor('events', 'insert failed', 'null value in column "category"', $id);
+		}
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertStringContainsString('3 x insert failed', $error);
+		$this->assertStringContainsString('affected records: 603523is, 603552erb, 603553erb', $error);
+	}
+
+
+	/**
+	 * When the key itself is what failed, there is no identifier — so the row is shown instead.
+	 */
+	public function testErrorsFallBackToTheRowWhenTheKeyIsUnavailable()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emitError('committees', 'insert failed', 'null value in column "id"', '{"id":null,"name":"Audit"}');
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertStringContainsString('(e.g. {"id":null,"name":"Audit"})', $error);
+	}
+
+
+	public function testRepeatedFailuresOfOneRecordAreListedOnce()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+		$sync->emitErrorFor('events', 'insert failed', 'duplicate key', '603523is');
+		$sync->emitErrorFor('events', 'insert failed', 'duplicate key', '603523is');
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertSame(1, substr_count($error, '603523is'));
+		$this->assertStringContainsString('affected record: 603523is', $error);
+	}
+
+
+	public function testAffectedRecordListIsCapped()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sync->schedule([], [], 'admin@example.com');
+
+		for ($i = 0; $i < Devour\Synchronizer::IDENTIFIER_LIMIT + 5; $i++) {
+			$sync->emitErrorFor('events', 'insert failed', 'duplicate key', 'id' . $i);
+		}
+
+		$error = (string) $database->query('SELECT error FROM devour_stats LIMIT 1')->fetchColumn();
+
+		$this->assertStringContainsString('(+5 more)', $error);
+	}
+
+
+	/**
+	 * A composite key names its parts; the values alone would not identify anything.
+	 */
+	public function testCompositeKeysAreNamedInTheAffectedList()
+	{
+		$database = $this->statsDatabase();
+		$sync     = $this->loggingSynchronizer($database);
+
+		$sessions = new Devour\Mapping('evses', 'event_sessions', ['code', 'event']);
+
+		$this->assertSame(
+			'code=A event=603523is',
+			$sync->identifierFor($sessions, ['code' => 'A', 'event' => '603523is'])
+		);
+
+		$events = new Devour\Mapping('evmas', 'events', 'id');
+
+		$this->assertSame('603523is', $sync->identifierFor($events, ['id' => '603523is']));
+		$this->assertNull($sync->identifierFor($events, ['id' => NULL]));
 	}
 
 

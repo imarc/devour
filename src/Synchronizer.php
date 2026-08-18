@@ -17,13 +17,6 @@ class Synchronizer
 
 
 	/**
-	 * Every devour_stats column Synchronizer writes through statSet().
-	 *
-	 * Listed once so INSERT and UPDATE cannot drift apart, and so adding a column is one edit
-	 * rather than two.  heartbeat and max_gap are absent deliberately: they are maintained by
-	 * logAppend(), not by statSet().
-	 */
-	/**
 	 * Errors only.  Suitable for a scheduled run where only failures are worth keeping.
 	 */
 	const VERBOSITY_ERRORS = 0;
@@ -54,6 +47,15 @@ class Synchronizer
 
 
 	/**
+	 * How many affected record keys one error lists before it starts counting them instead.
+	 *
+	 * Generous: these are what someone works from to correct records at the source, and a key is a
+	 * few characters where the row it came from is a few hundred.
+	 */
+	const IDENTIFIER_LIMIT = 200;
+
+
+	/**
 	 * How many recent completed runs an interval estimate is drawn from.
 	 *
 	 * Counted in runs rather than measured in days so that a site syncing weekly still has a
@@ -62,6 +64,13 @@ class Synchronizer
 	const INTERVAL_SAMPLE = 20;
 
 
+	/**
+	 * Every devour_stats column Synchronizer writes through statSet().
+	 *
+	 * Listed once so INSERT and UPDATE cannot drift apart, and so adding a column is one edit
+	 * rather than two.  heartbeat and max_gap are absent deliberately: they are maintained by
+	 * logAppend(), not by statSet().
+	 */
 	const STAT_COLUMNS = [
 		'start_time',
 		'scheduled_by',
@@ -1135,22 +1144,39 @@ class Synchronizer
 	 * $context is the offending row or query.  It is kept as a single example and only surfaces at
 	 * DEBUG verbosity, because it is the bulk of an error line and is rarely the first thing needed.
 	 */
-	protected function logError(string $table, string $operation, string $message, $context = NULL): void
+	protected function logError(string $table, string $operation, string $message, $context = NULL, ?string $identifier = NULL): void
 	{
 		$message   = trim(preg_replace('/\s+/', ' ', $message));
 		$signature = $table . "\0" . $operation . "\0" . $this->normalizeError($message);
 
 		if (!isset($this->errors[$signature])) {
 			$this->errors[$signature] = [
-				'table'     => $table,
-				'operation' => $operation,
-				'message'   => $message,
-				'sample'    => is_scalar($context) ? (string) $context : json_encode($context),
-				'count'     => 0,
+				'table'       => $table,
+				'operation'   => $operation,
+				'message'     => $message,
+				'sample'      => is_scalar($context) ? (string) $context : json_encode($context),
+				'identifiers' => [],
+				'truncated'   => 0,
+				'count'       => 0,
 			];
 		}
 
 		$this->errors[$signature]['count']++;
+
+		//
+		// Every affected record's key is kept, not one example of it.  These identify the rows that
+		// have to be corrected at the source, so collapsing a hundred failures to a single sample
+		// discards the only part of the error anyone acts on.
+		//
+		if ($identifier !== NULL && $identifier !== '') {
+			if (!isset($this->errors[$signature]['identifiers'][$identifier])) {
+				if (count($this->errors[$signature]['identifiers']) < self::IDENTIFIER_LIMIT) {
+					$this->errors[$signature]['identifiers'][$identifier] = TRUE;
+				} else {
+					$this->errors[$signature]['truncated']++;
+				}
+			}
+		}
 
 		if (isset($this->tableStats[$table])) {
 			$this->tableStats[$table]['failed']++;
@@ -1166,6 +1192,35 @@ class Synchronizer
 		);
 
 		$this->persistErrors();
+	}
+
+
+	/**
+	 * The key of a row, as something a person can look up at the source.
+	 *
+	 * A single-column key reads as its bare value; a composite one names each part, since the
+	 * values alone would be ambiguous.
+	 */
+	protected function composeRowIdentifier(Mapping $mapping, array $row): ?string
+	{
+		$keys   = $mapping->getKey();
+		$values = [];
+
+		foreach ($keys as $field) {
+			if (!array_key_exists($field, $row) || $row[$field] === NULL || $row[$field] === '') {
+				return NULL;
+			}
+
+			$values[] = sprintf('%s=%s', $field, $row[$field]);
+		}
+
+		if (!$values) {
+			return NULL;
+		}
+
+		return count($values) === 1
+			? trim((string) $row[$keys[0]])
+			: join(' ', $values);
 	}
 
 
@@ -1195,15 +1250,37 @@ class Synchronizer
 		$shown = array_slice($this->errors, 0, self::ERROR_LIMIT);
 
 		foreach ($shown as $error) {
+			$identifiers = array_keys($error['identifiers']);
+
+			if ($identifiers) {
+				//
+				// The affected keys, which is what someone corrects at the source.  A row-level
+				// failure carries its whole row, but the row is hundreds of bytes of fields nobody
+				// reads to find out which record went wrong.
+				//
+				$affected = sprintf(
+					' -- affected %s: %s%s',
+					count($identifiers) === 1 ? 'record' : 'records',
+					join(', ', $identifiers),
+					$error['truncated']
+						? sprintf(' (+%s more)', number_format($error['truncated']))
+						: ''
+				);
+
+			} elseif ($error['sample'] !== NULL && $error['sample'] !== '') {
+				$affected = sprintf(' (e.g. %s)', $error['sample']);
+
+			} else {
+				$affected = '';
+			}
+
 			$lines[] = sprintf(
 				'[%s] %s%s: %s%s',
 				$error['table'],
 				$error['count'] > 1 ? $error['count'] . ' x ' : '',
 				$error['operation'],
 				$error['message'],
-				$error['sample'] !== NULL && $error['sample'] !== ''
-					? sprintf(' (e.g. %s)', $error['sample'])
-					: ''
+				$affected
 			);
 		}
 
@@ -1639,7 +1716,8 @@ class Synchronizer
 					$mapping->getDestination(),
 					'delete failed',
 					$e->getMessage(),
-					$destination_delete_query
+					$destination_delete_query,
+					$this->composeRowIdentifier($mapping, $deletion)
 				);
 			}
 		}
@@ -1706,11 +1784,14 @@ class Synchronizer
 				$this->countTableStat($mapping->getDestination(), 'inserted', 1);
 
 			} catch (\Exception $e) {
+				$filtered = $this->filter($mapping, $row, 'INSERT');
+
 				$this->logError(
 					$mapping->getDestination(),
 					'insert failed',
 					$e->getMessage(),
-					json_encode($this->filter($mapping, $row, 'INSERT'))
+					json_encode($filtered),
+					$this->composeRowIdentifier($mapping, $filtered)
 				);
 			}
 		}
@@ -1761,11 +1842,14 @@ class Synchronizer
 					$this->countTableStat($mapping->getDestination(), 'transferred', 1);
 
 				} catch (\Exception $e) {
+					$filtered = $this->filter($mapping, $row, 'INSERT');
+
 					$this->logError(
 						$mapping->getDestination(),
 						'transfer failed',
 						$e->getMessage(),
-						json_encode($this->filter($mapping, $row, 'INSERT'))
+						json_encode($filtered),
+						$this->composeRowIdentifier($mapping, $filtered)
 					);
 				}
 			}
@@ -1845,11 +1929,14 @@ class Synchronizer
 					$this->countTableStat($mapping->getDestination(), 'updated', 1);
 
 				} catch (\Exception $e) {
+					$filtered = $this->filter($mapping, $row, 'UPDATE');
+
 					$this->logError(
 						$mapping->getDestination(),
 						'update failed',
 						$e->getMessage(),
-						json_encode($this->filter($mapping, $row, 'UPDATE'))
+						json_encode($filtered),
+						$this->composeRowIdentifier($mapping, $filtered)
 					);
 				}
 			}
