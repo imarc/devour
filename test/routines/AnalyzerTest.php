@@ -9,11 +9,37 @@ class TestAnalyzer extends Devour\Analyzer
 	}
 }
 
+/**
+ * Counts the queries the analyzer issues, so tests can assert when devour_stats is read.
+ */
+class CountingPDO extends PDO
+{
+	public int $queries = 0;
+
+	public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
+	{
+		$this->queries++;
+
+		return parent::query($query, $fetchMode, ...$fetchModeArgs);
+	}
+}
+
 final class AnalyzerTest extends TestCase
 {
 	private function database(array $rows): PDO
 	{
-		$database = new PDO('sqlite::memory:');
+		return $this->seed(new PDO('sqlite::memory:'), $rows);
+	}
+
+
+	private function countingDatabase(array $rows): CountingPDO
+	{
+		return $this->seed(new CountingPDO('sqlite::memory:'), $rows);
+	}
+
+
+	private function seed(PDO $database, array $rows): PDO
+	{
 		$database->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		$database->exec('CREATE TABLE devour_stats (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,5 +103,48 @@ final class AnalyzerTest extends TestCase
 		]);
 
 		$this->assertSame(0, (int) (new TestAnalyzer($database))->getAverageRunTime());
+	}
+
+
+	/**
+	 * Constructing the analyzer must not read devour_stats.
+	 *
+	 * Only sync:stats wants these figures, but the analyzer is built through the DI container
+	 * whenever a console command is registered, so parsing in the constructor made every command
+	 * pay for it. A site whose devour_stats still held pre-SUMMARY verbose logs exhausted memory
+	 * before any command could run.
+	 */
+	public function testConstructionDoesNotReadTheStatsTable()
+	{
+		$database = $this->countingDatabase([
+			['2026-08-17 09:00:00', '2026-08-17 09:10:00', "[2026-08-17 09:00:00] Syncing events\n"],
+		]);
+
+		$queries = $database->queries;
+
+		new TestAnalyzer($database);
+
+		$this->assertSame($queries, $database->queries);
+	}
+
+
+	/**
+	 * The logs are parsed on first use, and only once no matter how many accessors are called.
+	 */
+	public function testStatsAreParsedOnceOnFirstUse()
+	{
+		$database = $this->countingDatabase([
+			['2026-08-17 09:00:00', '2026-08-17 09:10:00',
+			 "[2026-08-17 09:00:00] Syncing events\n[2026-08-17 09:05:00] ...completed inserts\n"],
+		]);
+
+		$analyzer = new TestAnalyzer($database);
+		$queries  = $database->queries;
+
+		$this->assertSame(['events'], array_values($analyzer->getTables()));
+		$this->assertSame(600, (int) $analyzer->getAverageRunTime());
+		$this->assertNull($analyzer->getPropertyStat('duration', 'absent'));
+
+		$this->assertSame($queries + 1, $database->queries);
 	}
 }

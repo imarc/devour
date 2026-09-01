@@ -64,6 +64,12 @@ class Analyzer
 
 
 	/**
+	 * Whether the stats have been read out of devour_stats yet.
+	 */
+	protected bool $parsed = FALSE;
+
+
+	/**
 	 *
 	 */
 	public function __construct(PDO $database)
@@ -71,8 +77,6 @@ class Analyzer
 		$this->assertMigrationReady($database);
 
 		$this->database = $database;
-
-		$this->parseLogs();
 	}
 
 
@@ -86,10 +90,33 @@ class Analyzer
 
 
 	/**
+	 * Read devour_stats, at most once, before anything reads the parsed figures.
+	 *
+	 * This is deliberately not done in the constructor.  Only sync:stats wants these figures, but
+	 * the analyzer is built through the DI container whenever a console command is registered, so
+	 * parsing up front made every console command read every run's log.  Sites whose devour_stats
+	 * still holds pre-SUMMARY verbose logs have tens of megabytes there, which was enough to
+	 * exhaust memory before any command could run.
+	 */
+	protected function load(): void
+	{
+		if ($this->parsed) {
+			return;
+		}
+
+		$this->parsed = TRUE;
+
+		$this->parseLogs();
+	}
+
+
+	/**
 	 *
 	 */
 	public function getAverageRunTime()
 	{
+		$this->load();
+
 		$data = [];
 		foreach ($this->data as $result) {
 			if ($result['start_time'] && $result['end_time']) {
@@ -107,6 +134,8 @@ class Analyzer
 	 */
 	public function getTables()
 	{
+		$this->load();
+
 		return $this->tables;
 	}
 
@@ -117,6 +146,8 @@ class Analyzer
 	 */
 	public function getPropertyStat($property, $name, $stat = 'average')
 	{
+		$this->load();
+
 		$tables = $this->getTables();
 		$data   = [];
 
