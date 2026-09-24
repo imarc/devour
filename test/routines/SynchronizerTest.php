@@ -1,5 +1,6 @@
 <?php
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class TestSynchronizer extends Devour\Synchronizer
@@ -615,6 +616,68 @@ final class SynchronizerTest extends TestCase
 
 		$this->assertTrue($sync->syncedFor('event_sessions'));
 		$this->assertFalse($sync->callUnsynced('event_sessions', [['code' => 'A', 'event' => '1']]));
+	}
+
+
+	public static function transferSelectionModes(): array
+	{
+		return [
+			'full sync'   => [FALSE, []],
+			'truncate'    => [TRUE,  []],
+			'subset sync' => [FALSE, [['id' => 'a']]],
+		];
+	}
+
+
+	/**
+	 * A failed source select leaves the temporary table empty, which read as "every row deleted".
+	 */
+	#[DataProvider('transferSelectionModes')]
+	public function testFailedTransferSelectionLeavesDestinationRowsIntact(bool $truncate, array $ids): void
+	{
+		$source      = new PDO('sqlite::memory:');
+		$destination = $this->statsDatabase();
+
+		$source->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$destination->exec('CREATE TABLE people (id TEXT PRIMARY KEY, name TEXT)');
+		$destination->exec("INSERT INTO people (id, name) VALUES ('a', 'Ann'), ('b', 'Bob')");
+		$destination->exec("INSERT INTO devour_updates (target, time) VALUES ('people', '1800-01-01 00:00:00')");
+
+		$sync = new class($source, $destination) extends TestSynchronizer {
+			public function createTemporaryTable($mapping)
+			{
+				$this->destination->exec(sprintf(
+					'CREATE TEMPORARY TABLE devour_temp_%1$s AS SELECT *, 1 AS devour_updated FROM %1$s WHERE 0',
+					$mapping->getDestination()
+				));
+			}
+
+			// sqlite has no TRUNCATE
+			protected function truncateTable(Devour\Mapping $mapping)
+			{
+				$this->destination->exec('DELETE FROM ' . $mapping->getDestination());
+			}
+		};
+
+		// no such source table, so the transfer selection throws
+		$mapping = new Devour\Mapping('missing_people', 'people', 'id');
+		$mapping->addField('id', 'missing_people.id');
+		$mapping->addField('name', 'missing_people.name');
+
+		$sync->setEchoVerbosity(-1);
+		$sync->addMapping($mapping, $truncate);
+		$sync->run(['people'], $ids ? ['people' => $ids] : []);
+
+		$this->assertSame(
+			['a', 'b'],
+			$destination->query('SELECT id FROM people ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)
+		);
+
+		// the watermark must not advance past records that were never transferred
+		$this->assertSame(
+			'1800-01-01 00:00:00',
+			$destination->query("SELECT time FROM devour_updates WHERE target = 'people'")->fetchColumn()
+		);
 	}
 
 
