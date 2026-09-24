@@ -587,6 +587,17 @@ class Synchronizer
 				if (is_array($decoded)) {
 					$ids = $decoded;
 				}
+
+				//
+				// schedule() stores the raw ids of a single mapping, the shape the scheduled-sync
+				// server script reads back to pass as --ids.  Keyed by mapping here, as the sync
+				// command does, since syncMapping() looks them up by name.
+				//
+				$name = count($mappings) == 1 ? reset($mappings) : NULL;
+
+				if (isset($ids[0]) && !is_array($ids[0]) && isset($this->mappings[$name])) {
+					$ids = [$name => $this->mappings[$name]->composeKeys($ids)];
+				}
 			}
 
 			if (!$force_update && ($force = $this->statGet('force'))) {
