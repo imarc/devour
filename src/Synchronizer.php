@@ -1615,35 +1615,45 @@ class Synchronizer
 		$this->openTableStats($mapping->getDestination());
 
 		$this->createTemporaryTable($mapping);
-		$this->syncMappingTemporary($mapping, $ids);
 
+		$transferred      = $this->syncMappingTemporary($mapping, $ids);
 		$start_sync_time  = date('Y-m-d H:i:s');
 
-		if ($this->truncate[$mapping->getDestination()] && empty($ids)) {
-			$this->truncateTable($mapping);
-			$this->syncMappingInserts($mapping);
+		//
+		// A failed selection leaves the temporary table empty, which the delete step would read as
+		// every row having been removed at the source.  Nothing is written, and the watermark is
+		// left where it was so the next run picks these records up.
+		//
+		if (!$transferred) {
+			$this->log('...skipping writes, transfer selection failed');
 
 		} else {
-			if ($mapping->canDelete()) {
-				$this->syncMappingDeletes($mapping, $ids);
-				$this->log('...completed deletions');
+			if ($this->truncate[$mapping->getDestination()] && empty($ids)) {
+				$this->truncateTable($mapping);
+				$this->syncMappingInserts($mapping);
+
+			} else {
+				if ($mapping->canDelete()) {
+					$this->syncMappingDeletes($mapping, $ids);
+					$this->log('...completed deletions');
+				}
+
+				$this->syncMappingInserts($mapping);
+				$this->log('...completed inserts');
+
+				if ($mapping->canUpdate()) {
+					$this->syncMappingUpdates($mapping, $force_update);
+					$this->log('...completed updates');
+				}
 			}
 
-			$this->syncMappingInserts($mapping);
-			$this->log('...completed inserts');
+			//
+			// We use the start sync time, but set it after its completed in order to catch anything
+			// that might be updated while the sync is taking place (in the next one)
+			//
 
-			if ($mapping->canUpdate()) {
-				$this->syncMappingUpdates($mapping, $force_update);
-				$this->log('...completed updates');
-			}
+			$this->updateSet($name, $start_sync_time);
 		}
-
-		//
-		// We use the start sync time, but set it after its completed in order to catch anything
-		// that might be updated while the sync is taking place (in the next one)
-		//
-
-		$this->updateSet($name, $start_sync_time);
 
 		$this->closeTableStats($mapping->getDestination());
 
@@ -1827,9 +1837,10 @@ class Synchronizer
 
 
 	/**
-	 *
+	 * Returns FALSE when the source selection itself fails.  Failures of individual rows do not
+	 * count: those rows could never have reached the destination either.
 	 */
-	protected function syncMappingTemporary(Mapping $mapping, $ids = array())
+	protected function syncMappingTemporary(Mapping $mapping, $ids = array()): bool
 	{
 		$source_select_query = $mapping->composeSourceSelectQuery($ids);
 		$query_database      = $this->getTransferSelectDatabase($mapping);
@@ -1888,7 +1899,11 @@ class Synchronizer
 				$e->getMessage(),
 				$source_select_query
 			);
+
+			return FALSE;
 		}
+
+		return TRUE;
 	}
 
 	/**
