@@ -722,6 +722,39 @@ final class SynchronizerTest extends TestCase
 	}
 
 
+	/**
+	 * schedule() stores a single mapping's raw ids, which run() used to look up by mapping name,
+	 * find nothing, and so sync the whole table.
+	 */
+	public function testRunKeysScheduledIdsByMapping(): void
+	{
+		$database = $this->statsDatabase();
+
+		$sync = new class($database, $database) extends TestSynchronizer {
+			public $calls = [];
+
+			protected function syncMapping($name, $ids, $force_update, $context = NULL)
+			{
+				$this->calls[] = compact('name', 'ids');
+			}
+		};
+
+		$sync->setEchoVerbosity(-1);
+		$sync->addMapping(new Devour\Mapping('source_events', 'events', 'id'));
+		$sync->schedule(['events'], ['166299tvl'], 'admin@example.com');
+
+		// the stored shape is also read by the scheduled-sync server script, so it must not change
+		$this->assertSame(
+			'["166299tvl"]',
+			$database->query('SELECT ids FROM devour_stats LIMIT 1')->fetchColumn()
+		);
+
+		$sync->run();
+
+		$this->assertSame([['name' => 'events', 'ids' => [['id' => '166299tvl']]]], $sync->calls);
+	}
+
+
 	public function testStatUpdateNormalizesFalseForce(): void
 	{
 		$database = new PDO('sqlite::memory:');
