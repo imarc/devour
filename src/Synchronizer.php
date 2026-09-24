@@ -1593,7 +1593,17 @@ class Synchronizer
 			} else {
 				$key_query = $mapping->composeSourceDependencyKeyQuery($this->mappings[$dependency_table], $ids);
 				if ($key_query) {
-					$keys = $this->source->query($key_query)->fetchAll();
+					//
+					// Filtered as adjunct keys are.  unsynced() compares against keys recorded after
+					// filtering, so raw keys (untrimmed, mixed case) never matched and a table already
+					// synced as an adjunct was synced again.  The delete step also scopes to these
+					// keys, and raw keys never matched the filtered destination values.
+					//
+					$keys = $this->filterKeys(
+						$this->mappings[$dependency_table],
+						$this->source->query($key_query)->fetchAll(PDO::FETCH_ASSOC),
+						'select'
+					);
 
 					//
 					// Don't need to sync if there's no keys
