@@ -1,0 +1,19 @@
+src/Synchronizer.php
+  s_fac1e16e4a95af::t_f255b37aca429d 590-600
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "88d5f8e6702831b0127b419b5019a4d20bc29750",
+  "prompts": {},
+  "sessions": {
+    "s_fac1e16e4a95af": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "150e051f-c0d8-49a1-b15d-254eb2959f60",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Austin Fishbaugh <austinfishbaugh@imarc.com>"
+    }
+  }
+}
