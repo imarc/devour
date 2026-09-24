@@ -234,6 +234,16 @@ class Synchronizer
 	 */
 	public function createTemporaryTable($mapping)
 	{
+		//
+		// Temporary tables live until the connection closes, so a second sync of the same table
+		// on this connection (another subset, another run) would collide with the first.  pg_temp
+		// keeps the drop from ever reaching a permanent table of the same name.
+		//
+		$this->destination->query(sprintf(
+			'DROP TABLE IF EXISTS pg_temp.devour_temp_%s',
+			$mapping->getDestination()
+		));
+
 		$this->destination->query(sprintf("
 			CREATE TEMPORARY TABLE devour_temp_%s (LIKE %s INCLUDING ALL, devour_updated bool default true %s)
 			",
